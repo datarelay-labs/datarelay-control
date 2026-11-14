@@ -70,6 +70,7 @@ from app.runtime.errors import ProtectionApplicationError, PreviewSideEffectRequ
 from app.security.secrets import (
     MASKED_SECRET_SENTINEL,
     is_secret_query_param_name,
+    is_sensitive_field_name,
     mask_config_payload,
     mask_http_headers,
     mask_secrets,
@@ -711,19 +712,118 @@ def _http_draft_keeps_saved_destinations(saved: dict[str, Any], draft: dict[str,
     return _proxy(saved) == _proxy(effective)
 
 
+# Free-text / structured HTTP auth fields that routinely embed credentials in addition to the explicit secret
+# keys; like secrets they are inherited from the saved row only while every destination is unchanged.
+_AUTH_TEST_HTTP_CREDENTIAL_FIELDS = frozenset(
+    {
+        "access_token",
+        "token_body",
+        "token_custom_headers",
+        "login_body_template",
+        "login_body_raw",
+        "login_headers",
+        "preflight_headers",
+        "preflight_body_raw",
+    }
+)
+
+
+def _auth_test_is_blank_or_masked(value: Any) -> bool:
+    """Missing, null, blank and the masked placeholder are one state: "not supplied"."""
+
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() in ("", _AUTH_TEST_MASK)
+    if isinstance(value, (dict, list, tuple)):
+        return len(value) == 0
+    return False
+
+
+def _auth_test_empty_like(saved_value: Any) -> Any:
+    if isinstance(saved_value, dict):
+        return {}
+    if isinstance(saved_value, (list, tuple)):
+        return []
+    return ""
+
+
+def _auth_test_resolve_secret_fields(
+    out: dict[str, Any],
+    saved: dict[str, Any],
+    draft: dict[str, Any],
+    secret_keys: Any,
+    *,
+    keep_saved: bool,
+) -> None:
+    """Fail-closed secret resolution for every secret field of the saved row or the draft.
+
+    A non-blank, non-masked draft value is an explicit replacement and always wins. Otherwise (missing, null,
+    blank or masked) the saved value is inherited only when ``keep_saved`` (destination unchanged); in every
+    other case the field is cleared. Fields that exist only in the saved row are handled too, so a secret
+    the draft never mentions can never follow a changed destination.
+    """
+
+    for key in secret_keys:
+        if key not in saved and key not in draft:
+            continue
+        supplied = draft.get(key)
+        if not _auth_test_is_blank_or_masked(supplied):
+            out[key] = supplied
+            continue
+        previous = saved.get(key)
+        if keep_saved and not _auth_test_is_blank_or_masked(previous):
+            out[key] = previous
+        else:
+            out[key] = _auth_test_empty_like(previous)
+
+
+def _auth_test_header_is_sensitive(name: str) -> bool:
+    return mask_http_headers({str(name): "x"}).get(str(name)) != "x"
+
+
+def _auth_test_merge_headers(saved_headers: Any, draft_headers: Any, *, draft_supplied: bool, keep_saved: bool) -> dict[str, str]:
+    """Merge common headers: a masked sensitive value resolves from the saved row only for an unchanged destination."""
+
+    saved_map = {str(k): str(v) for k, v in dict(saved_headers or {}).items()}
+    if not draft_supplied:
+        return {k: v for k, v in saved_map.items() if keep_saved or not _auth_test_header_is_sensitive(k)}
+    out: dict[str, str] = {}
+    for key, value in dict(draft_headers or {}).items():
+        name = str(key)
+        if value is None or str(value).strip() in ("", _AUTH_TEST_MASK):
+            if _auth_test_header_is_sensitive(name):
+                if keep_saved and saved_map.get(name):
+                    out[name] = saved_map[name]
+                continue
+            out[name] = "" if value is None else str(value)
+            continue
+        out[name] = str(value)
+    return out
+
+
 def _overlay_connector_auth_test_draft(saved: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
     """Overlay a visible HTTP edit draft without forwarding saved secrets to a new destination."""
 
-    can_reuse_saved_secret = _http_draft_keeps_saved_destinations(saved, draft)
+    keep_saved = _http_draft_keeps_saved_destinations(saved, draft)
+    secret_keys = (
+        set(_AUTH_TEST_SECRET_KEYS)
+        | set(_AUTH_TEST_HTTP_CREDENTIAL_FIELDS)
+        | {k for k in (*saved, *draft) if is_sensitive_field_name(str(k))}
+    )
+    header_keys = ("headers", "common_headers")
 
     out = dict(saved)
     for key, value in draft.items():
-        if key in _AUTH_TEST_SECRET_KEYS and value in (None, "", _AUTH_TEST_MASK):
-            if can_reuse_saved_secret and saved.get(key) not in (None, ""):
-                continue
-            out[key] = ""
+        if key in secret_keys or key in header_keys:
             continue
         out[key] = value
+    _auth_test_resolve_secret_fields(out, saved, draft, sorted(secret_keys), keep_saved=keep_saved)
+    for key in header_keys:
+        if key in saved or key in draft:
+            out[key] = _auth_test_merge_headers(
+                saved.get(key), draft.get(key), draft_supplied=key in draft, keep_saved=keep_saved
+            )
     return out
 
 
@@ -777,8 +877,10 @@ def _overlay_connector_auth_test_non_http_draft(family: str, saved: dict[str, An
     """Overlay a visible DATABASE_QUERY / S3 / REMOTE_FILE edit draft on the saved connector row (E-009).
 
     Draft keys are mapped onto the saved row's canonical keys, so an edited value always replaces the saved
-    one. Masked/blank secret fields resolve from the saved row only while the destination (host+port or
-    endpoint) is unchanged; otherwise they are blanked and the saved secret is never forwarded.
+    one. Fail closed: every secret field of the saved row (explicit per-family allow-list plus the secret-name
+    heuristic, so a new secret field is never silently inherited) is inherited only while the destination
+    (host+port or endpoint) is unchanged and the draft did not supply a non-blank, non-masked replacement.
+    Missing, null, blank and masked draft values are the same state.
     """
 
     aliases = _AUTH_TEST_DRAFT_KEY_ALIASES.get(family, {})
@@ -789,18 +891,16 @@ def _overlay_connector_auth_test_non_http_draft(family: str, saved: dict[str, An
     same_destination = _connector_auth_test_secret_destination(family, saved) == _connector_auth_test_secret_destination(
         family, effective_draft
     )
-    resolved_keys = _AUTH_TEST_FAMILY_RESOLVED_KEYS.get(family, frozenset())
+    secret_keys = set(_AUTH_TEST_FAMILY_RESOLVED_KEYS.get(family, frozenset())) | {
+        k for k in (*saved, *canonical) if is_sensitive_field_name(str(k))
+    }
 
     out = dict(saved)
     for key, value in canonical.items():
-        if value is None:
-            continue
-        if key in resolved_keys and value in ("", _AUTH_TEST_MASK):
-            if same_destination and saved.get(key) not in (None, ""):
-                continue
-            out[key] = ""
+        if key in secret_keys or value is None:
             continue
         out[key] = value
+    _auth_test_resolve_secret_fields(out, saved, canonical, sorted(secret_keys), keep_saved=same_destination)
     return out
 
 

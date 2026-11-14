@@ -447,3 +447,189 @@ def test_http_overlay_applies_changed_base_url_path_and_typed_secret(monkeypatch
 
     assert seen == [("https://api.saved.example/v2/edited/path", {"Authorization": "Bearer typed-wrong-token"})]
     assert res.ok is False
+
+
+# --- fail closed: omitted / null / blank / masked secrets never follow a changed destination -----------
+
+_ABSENT = object()
+
+
+def _without_absent(d: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in d.items() if v is not _ABSENT}
+
+
+@pytest.mark.parametrize("secret", [_ABSENT, None, "", "   ", _MASK], ids=["omitted", "null", "blank", "spaces", "masked"])
+@pytest.mark.parametrize("over", [{"host": "attacker.example"}, {"port": 6543}], ids=["host", "port"])
+def test_db_changed_destination_never_inherits_saved_password(
+    monkeypatch: pytest.MonkeyPatch, secret: Any, over: dict[str, Any]
+) -> None:
+    _saved(monkeypatch, _SAVED_DB)
+    seen = _capture_db(monkeypatch)
+    draft = _without_absent({"source_type": "DATABASE_QUERY", "host": "db.saved.example", "database": "audit", **over, "password": secret})
+
+    _run_db(draft)
+
+    assert seen[0]["password"] == ""
+    assert "saved-db-password" not in repr(seen)
+
+
+def test_db_minimal_attacker_draft_from_the_review_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    _saved(monkeypatch, _SAVED_DB)
+    seen = _capture_db(monkeypatch)
+
+    _run_db({"source_type": "DATABASE_QUERY", "host": "attacker.example", "database": "audit"})
+
+    assert seen[0]["host"] == "attacker.example"
+    assert seen[0]["password"] == ""
+
+
+@pytest.mark.parametrize("secret", [_ABSENT, None, "", _MASK], ids=["omitted", "null", "blank", "masked"])
+def test_db_unchanged_destination_still_resolves_saved_password(monkeypatch: pytest.MonkeyPatch, secret: Any) -> None:
+    _saved(monkeypatch, _SAVED_DB)
+    seen = _capture_db(monkeypatch)
+
+    _run_db(_without_absent({"source_type": "DATABASE_QUERY", "host": "db.saved.example", "database": "audit", "password": secret}))
+
+    assert seen[0]["password"] == "saved-db-password"
+
+
+def test_db_explicit_replacement_is_used_even_when_destination_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _saved(monkeypatch, _SAVED_DB)
+    seen = _capture_db(monkeypatch)
+
+    _run_db(_db_draft(host="203.0.113.9", password="typed-new-password"))
+
+    assert seen[0]["password"] == "typed-new-password"
+
+
+@pytest.mark.parametrize("secret", [_ABSENT, None, "", _MASK], ids=["omitted", "null", "blank", "masked"])
+@pytest.mark.parametrize(
+    "over",
+    [{"endpoint_url": "http://attacker.example:9000"}, {"endpoint_url": "http://s3.saved.example:9001"}],
+    ids=["endpoint-host", "endpoint-port"],
+)
+def test_s3_changed_endpoint_never_inherits_saved_secret_or_access_key(
+    monkeypatch: pytest.MonkeyPatch, secret: Any, over: dict[str, Any]
+) -> None:
+    _saved(monkeypatch, _SAVED_S3)
+    seen = _capture_s3(monkeypatch)
+
+    _run_s3(_without_absent({"source_type": "S3_OBJECT_POLLING", "bucket": "audit-bucket", **over, "secret_key": secret}))
+
+    assert seen[0]["secret_key"] == ""
+    assert seen[0].get("access_key", "") == ""
+    assert "saved-s3-secret" not in repr(seen)
+
+
+def test_s3_omitted_secret_with_unchanged_endpoint_resolves_saved(monkeypatch: pytest.MonkeyPatch) -> None:
+    _saved(monkeypatch, _SAVED_S3)
+    seen = _capture_s3(monkeypatch)
+
+    _run_s3({"source_type": "S3_OBJECT_POLLING", "endpoint_url": "http://s3.saved.example:9000", "bucket": "other"})
+
+    assert seen[0]["secret_key"] == "saved-s3-secret"
+    assert seen[0]["bucket"] == "other"
+
+
+@pytest.mark.parametrize("secret", [_ABSENT, None, "", _MASK], ids=["omitted", "null", "blank", "masked"])
+@pytest.mark.parametrize("over", [{"host": "attacker.example"}, {"port": 2222}], ids=["host", "port"])
+def test_remote_file_changed_destination_never_inherits_any_saved_secret(
+    monkeypatch: pytest.MonkeyPatch, secret: Any, over: dict[str, Any]
+) -> None:
+    _saved(monkeypatch, _SAVED_RF)
+    seen = _capture_rf(monkeypatch)
+    draft = _without_absent(
+        {
+            "source_type": "REMOTE_FILE_POLLING",
+            "host": "sftp.saved.example",
+            **over,
+            "remote_password": secret,
+            "remote_private_key": secret,
+            "remote_private_key_passphrase": secret,
+        }
+    )
+
+    _run_rf(draft)
+
+    blob = repr(seen)
+    assert "saved-sftp-password" not in blob and "saved-----END KEY" not in blob and "AAAAsaved" not in blob
+    assert seen[0]["password"] == ""
+
+
+def test_remote_file_omitted_secrets_with_unchanged_destination_resolve_saved(monkeypatch: pytest.MonkeyPatch) -> None:
+    _saved(monkeypatch, _SAVED_RF)
+    seen = _capture_rf(monkeypatch)
+
+    _run_rf({"source_type": "REMOTE_FILE_POLLING", "host": "sftp.saved.example", "remote_username": "bfs"})
+
+    assert seen[0]["password"] == "saved-sftp-password"
+
+
+@pytest.mark.parametrize("secret", [_ABSENT, None, "", _MASK], ids=["omitted", "null", "blank", "masked"])
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"base_url": "https://attacker.example"},
+        {"oauth2_token_url": "https://attacker.example/token"},
+        {"login_url": "https://attacker.example/login"},
+        {"http_proxy": "http://attacker.example:3128"},
+    ],
+)
+def test_http_changed_destination_never_inherits_any_saved_secret(secret: Any, over: dict[str, Any]) -> None:
+    saved = {
+        **_SAVED_HTTP,
+        "api_key": "saved-vendor-key",
+        "refresh_token": "saved-refresh",
+        "token_body": '{"vendor_key": "saved-body-secret"}',
+        "headers": {"Authorization": "Bearer saved-header-token", "Accept": "application/json"},
+    }
+    secret_keys = ["oauth2_client_secret", "bearer_token", "api_key_value", "login_password", "api_key", "refresh_token"]
+    draft = {"base_url": "https://api.saved.example", "auth_type": "oauth2_client_credentials", **over}
+    for key in secret_keys:
+        if secret is not _ABSENT:
+            draft[key] = secret
+
+    out = _overlay_connector_auth_test_draft(saved, draft)
+
+    for key in secret_keys + ["token_body"]:
+        assert out[key] in ("", None), key
+    assert "saved-header-token" not in repr(out)
+    assert out["headers"].get("Accept") == "application/json"
+
+
+def test_http_omitted_secrets_with_unchanged_destination_resolve_saved() -> None:
+    out = _overlay_connector_auth_test_draft(_SAVED_HTTP, {"base_url": "https://api.saved.example"})
+    assert out["oauth2_client_secret"] == "saved-client-secret"
+    assert out["bearer_token"] == "saved-bearer"
+
+
+def test_http_masked_header_value_resolves_only_for_unchanged_destination() -> None:
+    saved = {**_SAVED_HTTP, "headers": {"Authorization": "Bearer saved-header-token"}}
+    same = _overlay_connector_auth_test_draft(saved, {"base_url": "https://api.saved.example", "headers": {"Authorization": _MASK}})
+    moved = _overlay_connector_auth_test_draft(saved, {"base_url": "https://attacker.example", "headers": {"Authorization": _MASK}})
+    assert same["headers"]["Authorization"] == "Bearer saved-header-token"
+    assert "Authorization" not in moved["headers"]
+
+
+def test_http_unknown_new_secret_field_is_not_silently_inherited() -> None:
+    """Secret-looking saved keys outside the explicit list are covered by the name heuristic."""
+
+    saved = {**_SAVED_HTTP, "vendor_signing_secret": "saved-signing-secret", "future_access_key": "saved-future-key"}
+    out = _overlay_connector_auth_test_draft(saved, {"base_url": "https://attacker.example"})
+    assert out["vendor_signing_secret"] == ""
+    assert out["future_access_key"] == ""
+
+
+def test_webhook_receiver_overlay_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _saved(
+        monkeypatch,
+        {"source_type": "WEBHOOK_RECEIVER", "connector_type": "webhook_receiver", "webhook_shared_secret": "saved-hook-secret"},
+    )
+
+    with pytest.raises(PreviewRequestError) as exc:
+        run_connector_auth_test(
+            ConnectorAuthTestRequest(connector_id=1, inline_flat_source={"base_url": "https://attacker.example", "auth_type": "no_auth"}),
+            MagicMock(),
+        )
+
+    assert exc.value.detail["error_type"] == "inline_draft_overlay_not_supported"
