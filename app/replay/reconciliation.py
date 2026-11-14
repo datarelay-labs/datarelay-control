@@ -36,6 +36,8 @@ from app.replay.models import (
     REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE,
     REPLAY_CONTEXT_ORIGIN_KEY,
     REPLAY_CONTEXT_RECONCILIATION_KEY,
+    REPLAY_CONTEXT_RUN_IDS_KEY,
+    REPLAY_CONTEXT_SOURCE_WINDOW_KEY,
     REPLAY_OPEN_STATUSES,
     REPLAY_RECONCILIATION_SUPERSEDED,
     REPLAY_STATUS_DISCARDED,
@@ -53,6 +55,7 @@ SUPERSEDE_SOURCE_LOGS_REPLAY = "logs_replay"
 
 _FINGERPRINT_HEX_LEN = 32
 _MAX_GUARD_CANDIDATES = 100
+_MAX_RUN_IDS = 20
 
 
 def compute_event_identities(events: list[dict[str, Any]]) -> list[str]:
@@ -109,6 +112,41 @@ def failure_occurrences(row: StreamReplayEvent) -> int:
         return 1
 
 
+def source_window(row: StreamReplayEvent) -> str | None:
+    raw = _context(row).get(REPLAY_CONTEXT_SOURCE_WINDOW_KEY)
+    return raw if isinstance(raw, str) and raw else None
+
+
+def run_ids(row: StreamReplayEvent) -> list[str]:
+    raw = _context(row).get(REPLAY_CONTEXT_RUN_IDS_KEY)
+    return [x for x in raw if isinstance(x, str) and x] if isinstance(raw, list) else []
+
+
+def has_occurrence_scope(row: StreamReplayEvent) -> bool:
+    """False for legacy rows recorded before occurrence identity existed."""
+
+    return source_window(row) is not None or bool(run_ids(row))
+
+
+def same_occurrence(
+    row: StreamReplayEvent,
+    *,
+    window: str | None,
+    known_run_ids: tuple[str, ...] | list[str] = (),
+) -> bool:
+    """True only when ``row`` provably belongs to the given source occurrence.
+
+    Identical payloads from independent pushes must stay independent recoverable jobs, so
+    an unknown/absent identity never matches.
+    """
+
+    row_window = source_window(row)
+    if window and row_window == window:
+        return True
+    wanted = {r for r in known_run_ids if r}
+    return bool(wanted) and bool(wanted & set(run_ids(row)))
+
+
 def _nullable_eq(column: Any, value: int | None) -> Any:
     return column.is_(None) if value is None else column == int(value)
 
@@ -140,10 +178,15 @@ def find_open_duplicate_job(
     failover_route_id: int | None,
     delivery_kind: str,
     identities: list[str],
+    window: str | None,
 ) -> StreamReplayEvent | None:
-    """Return the open job that already covers exactly these events (E-114)."""
+    """Return the open job that already covers exactly these events *of the same window*.
 
-    if not identities:
+    Only polled runs over a held checkpoint window (E-114) have a provable repeat identity;
+    without ``window`` (push sources) nothing is ever folded together.
+    """
+
+    if not identities or not window:
         return None
     fingerprint = identities_fingerprint(identities)
     stmt = (
@@ -160,6 +203,7 @@ def find_open_duplicate_job(
             StreamReplayEvent.status.in_(sorted(REPLAY_OPEN_STATUSES)),
             StreamReplayEvent.delivery_context_json[REPLAY_CONTEXT_EVENTS_FINGERPRINT_KEY].astext
             == fingerprint,
+            StreamReplayEvent.delivery_context_json[REPLAY_CONTEXT_SOURCE_WINDOW_KEY].astext == window,
         )
         .order_by(StreamReplayEvent.id.desc())
         .limit(1)
@@ -172,6 +216,7 @@ def note_repeated_failure(
     *,
     error: Exception | None,
     now: datetime | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Fold another failure of the same events into the existing open job."""
 
@@ -179,6 +224,10 @@ def note_repeated_failure(
     ctx = dict(_context(row))
     ctx[REPLAY_CONTEXT_FAILURE_OCCURRENCES_KEY] = failure_occurrences(row) + 1
     ctx[REPLAY_CONTEXT_LAST_FAILURE_AT_KEY] = stamp.isoformat()
+    if run_id:
+        known = run_ids(row)
+        if run_id not in known:
+            ctx[REPLAY_CONTEXT_RUN_IDS_KEY] = (known + [run_id])[-_MAX_RUN_IDS:]
     row.delivery_context_json = ctx
     row.updated_at = stamp
     # Only a never-replayed job mirrors the latest recording error; a failed replay keeps
@@ -211,8 +260,14 @@ def supersede_delivered_jobs(
     source: str,
     detail: str | None = None,
     exclude_ids: tuple[int, ...] = (),
+    window: str | None = None,
+    known_run_ids: tuple[str, ...] | list[str] = (),
 ) -> list[int]:
     """Close open jobs whose events were all delivered; return the superseded ids (E-113).
+
+    A job is only closed when it provably belongs to the same source occurrence as the
+    delivery (same checkpoint ``window`` or a shared run id). Another push or poll of the
+    same content must never mark an undelivered job as delivered.
 
     Superseded jobs become ``discarded`` (terminal, never executable) and carry a
     reconciliation marker so the Replay Center and Logs can explain why. Never raises on
@@ -251,6 +306,8 @@ def supersede_delivered_jobs(
     superseded: list[int] = []
     for row in rows:
         if int(row.id) in exclude_ids or not is_delivery_failure_origin(row):
+            continue
+        if not same_occurrence(row, window=window, known_run_ids=known_run_ids):
             continue
         identities = row_identities(row)
         if not identities or not set(identities) <= delivered_set:
@@ -312,12 +369,16 @@ def find_prior_delivery(
     identities: list[str],
     since: datetime,
     exclude_id: int | None = None,
+    window: str | None = None,
+    known_run_ids: tuple[str, ...] | list[str] = (),
 ) -> StreamReplayEvent | None:
     """Return a job that already delivered all ``identities`` after ``since``.
 
     ``since`` is when the failure being replayed was recorded: only a delivery that
     happened afterwards can have satisfied it (identical content recorded earlier must
-    not block a genuinely new failure).
+    not block a genuinely new failure). When both the failure and the candidate carry
+    occurrence identity they must match; a candidate of unknown (legacy) occurrence is
+    treated as a match, which can only make the guard stricter (an explicit override exists).
     """
 
     if not identities:
@@ -345,8 +406,12 @@ def find_prior_delivery(
         delivered_at = _delivered_at(candidate)
         if delivered_at is None or delivered_at < since:
             continue
-        if wanted <= set(row_identities(candidate)):
-            return candidate
+        if not wanted <= set(row_identities(candidate)):
+            continue
+        if (window or known_run_ids) and has_occurrence_scope(candidate):
+            if not same_occurrence(candidate, window=window, known_run_ids=known_run_ids):
+                continue
+        return candidate
     return None
 
 

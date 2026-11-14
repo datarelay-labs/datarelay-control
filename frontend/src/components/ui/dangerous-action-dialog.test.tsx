@@ -29,6 +29,28 @@ describe('DangerousActionDialog', () => {
     expect(screen.getByTestId('dangerous-action-dialog-reversibility')).toHaveTextContent('This cannot be undone.')
   })
 
+  it('never appends a stray plural suffix to dependency counts (E-131)', () => {
+    render(
+      <DangerousActionDialog
+        open
+        onOpenChange={() => {}}
+        title="Delete destination permanently?"
+        dependencies={[
+          { label: 'Connected routes', count: 0 },
+          { label: 'Streams using destination', count: 1 },
+          { label: 'Delivery logs', count: 4 },
+        ]}
+        primaryLabel="Delete"
+        onConfirm={() => {}}
+      />,
+    )
+    const deps = screen.getByTestId('dangerous-action-dialog-dependencies')
+    expect(deps).toHaveTextContent('Connected routes: 0')
+    expect(deps).toHaveTextContent('Streams using destination: 1')
+    expect(deps).toHaveTextContent('Delivery logs: 4')
+    expect(deps.textContent).not.toMatch(/\d+s\b/)
+  })
+
   it('requires typed name before enabling confirm', async () => {
     const onConfirm = vi.fn()
     render(

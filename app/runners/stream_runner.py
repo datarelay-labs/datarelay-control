@@ -1948,8 +1948,15 @@ class StreamRunner(BaseRunner):
                     route_id=route_id if route_id else None,
                     dynamic_route_id=dynamic_route_id,
                     failover_route_id=failover_route_id,
+                    source_window=source_window,
+                    run_id=run_id,
                 )
 
+            # Only a polled run over a held checkpoint window has a provable repeat identity
+            # (E-114); push sources such as webhooks never persist a window, so each push keeps
+            # its own recoverable job even when the payload is identical.
+            source_window = self._current_source_window()
+            run_id = self._run_id
             self._db_write(_record)
         except Exception:
             logger.exception(
@@ -1957,6 +1964,13 @@ class StreamRunner(BaseRunner):
                 _get(stream, "id"),
                 destination_id,
             )
+
+    def _current_source_window(self) -> str | None:
+        """Checkpoint-window anchor of the current polled run; None for push/non-persisting runs."""
+
+        if self._route_delivery_enabled and self._route_delivery_anchor:
+            return str(self._route_delivery_anchor)
+        return None
 
     def _reconcile_replay_after_delivery(
         self,
@@ -1992,6 +2006,9 @@ class StreamRunner(BaseRunner):
             stream_id = int(_get(stream, "id"))
             normalized_route_id = int(route_id) if route_id else None
 
+            source_window = self._current_source_window()
+            run_id = self._run_id
+
             def _reconcile(db: Session) -> None:
                 supersede_delivered_jobs(
                     db,
@@ -2002,6 +2019,8 @@ class StreamRunner(BaseRunner):
                     failover_route_id=failover_route_id,
                     delivered_events=events,
                     source=SUPERSEDE_SOURCE_RUNTIME_DELIVERY,
+                    window=source_window,
+                    known_run_ids=[run_id] if run_id else [],
                 )
 
             self._db_write(_reconcile)

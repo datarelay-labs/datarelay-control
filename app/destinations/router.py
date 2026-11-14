@@ -4,15 +4,18 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
 from app.config_concurrency import pop_expected_updated_at, require_fresh_updated_at
 from app.database import get_db, get_db_read_bounded, utcnow
 from app.destinations.config_validation import validate_destination_config
+from app.destinations.delete_impact import destination_delete_impact, detach_destination_history
 from app.destinations.models import Destination
 from app.destinations.schemas import (
     DestinationCreate,
+    DestinationDeleteImpact,
     DestinationListItem,
     DestinationPreviewTest,
     DestinationRead,
@@ -361,6 +364,22 @@ async def update_destination(
     return _masked_read(row)
 
 
+@router.get("/{destination_id}/delete-impact", response_model=DestinationDeleteImpact)
+async def get_destination_delete_impact(
+    destination_id: int, db: Session = Depends(get_db_read_bounded)
+) -> DestinationDeleteImpact:
+    """What deleting the destination retains (delivery logs) and removes (replay jobs) (E-129/E-130)."""
+
+    if db.query(Destination.id).filter(Destination.id == destination_id).first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {destination_id}"},
+        )
+    return DestinationDeleteImpact(
+        destination_id=destination_id, **destination_delete_impact(db, destination_id)
+    )
+
+
 @router.delete("/{destination_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_destination(destination_id: int, request: Request, db: Session = Depends(get_db)) -> None:
     row = db.query(Destination).filter(Destination.id == destination_id).first()
@@ -432,14 +451,39 @@ async def delete_destination(destination_id: int, request: Request, db: Session 
             },
         )
     dest_name = str(row.name)
-    purge_runtime_analytics(db, destination_id=int(destination_id))
-    db.delete(row)
-    journal.record_audit_event(
-        db,
-        action="DESTINATION_DELETED",
-        entity_type="DESTINATION",
-        entity_id=int(destination_id),
-        entity_name=dest_name,
-        request=request,
-    )
-    db.commit()
+    # Counted server-side at delete time so the audit trail records exactly what was retained
+    # and removed (delivery logs are kept with destination_id NULL; replay jobs are removed).
+    impact = destination_delete_impact(db, int(destination_id))
+    try:
+        # delivery_logs.destination_id and stream_replay_events.destination_id are foreign keys
+        # without cascade: keep the logs (detached) and remove the undeliverable replay jobs so the
+        # destination row can be removed instead of failing with a database error (E-129).
+        detach_destination_history(db, int(destination_id))
+        purge_runtime_analytics(db, destination_id=int(destination_id))
+        db.delete(row)
+        journal.record_audit_event(
+            db,
+            action="DESTINATION_DELETED",
+            entity_type="DESTINATION",
+            entity_id=int(destination_id),
+            entity_name=dest_name,
+            details={
+                "delivery_logs_retained": impact["delivery_logs_retained"],
+                "pending_replay_jobs_deleted": impact["pending_replay_jobs"],
+                "completed_replay_jobs_deleted": impact["completed_replay_jobs"],
+            },
+            request=request,
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "DESTINATION_DELETE_BLOCKED_DEPENDENCY",
+                "message": (
+                    "Destination cannot be deleted because other configuration or history still "
+                    "references it. Remove its routes, failover and dynamic routes first, then retry."
+                ),
+            },
+        ) from exc

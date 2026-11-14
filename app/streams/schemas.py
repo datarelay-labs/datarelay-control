@@ -87,8 +87,14 @@ class StreamRead(StreamBase):
 
 
 class StreamDeleteImpact(BaseModel):
-    """Operator-held data that deleting the stream permanently destroys."""
+    """Everything deleting the stream permanently destroys (held data and history)."""
 
     stream_id: int
     quarantined_events: int
     pending_replay_jobs: int
+    resolved_quarantine_events: int
+    completed_replay_jobs: int
+    backfill_jobs: int
+    protection_rules: int
+    routes: int
+    delivery_logs: int

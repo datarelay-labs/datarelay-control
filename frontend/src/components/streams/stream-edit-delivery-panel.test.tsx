@@ -130,6 +130,9 @@ describe('StreamEditDeliveryPanel route removal', () => {
       'Historical delivery logs are kept, but they are no longer associated with this path.',
     )
     expect(impact).toHaveTextContent('Analytics recorded for this path are removed')
+    expect(impact).toHaveTextContent(
+      'Quarantine events and replay jobs of this path are kept, but they are no longer associated with it.',
+    )
     expect(screen.getByTestId('route-remove-dialog-reversibility')).toHaveTextContent(
       'does not restore the deleted route configuration',
     )

@@ -1,11 +1,23 @@
 import { DangerousActionDialog, type DangerousActionDependency } from '../ui/dangerous-action-dialog'
 import { STREAM_DELETE_IMPACT_BULLETS, STREAM_DELETE_REVERSIBILITY } from './destructive-lifecycle-copy'
 
-/** Held data the delete destroys. `loading`/`error` keep the confirm button disabled (fail closed). */
+/** Held data and history the delete destroys. `loading`/`error` keep the confirm button disabled (fail closed). */
 export type StreamDeleteImpactState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; quarantinedEvents: number; pendingReplayJobs: number }
+  | {
+      status: 'ready'
+      quarantinedEvents: number
+      pendingReplayJobs: number
+      /** Released or discarded quarantine events (decision history). */
+      resolvedQuarantineEvents: number
+      /** Replay jobs already replayed or discarded. */
+      completedReplayJobs: number
+      backfillJobs: number
+      protectionRules: number
+      routes: number
+      deliveryLogs: number
+    }
 
 type StreamDeleteConfirmDialogProps = {
   streamName: string
@@ -41,6 +53,22 @@ function streamDeleteHeldDataBullets(impact: StreamDeleteImpactState | undefined
       } not been delivered. They will never be sent.`,
     )
   }
+  if (impact.resolvedQuarantineEvents > 0) {
+    bullets.push(
+      `Permanently destroys ${plural(impact.resolvedQuarantineEvents, 'released or discarded quarantine event')} (decision history). Release and discard decisions remain only in Settings > Audit Logs.`,
+    )
+  }
+  if (impact.completedReplayJobs > 0) {
+    bullets.push(
+      `Permanently deletes ${plural(impact.completedReplayJobs, 'replayed or discarded replay job')} (replay history).`,
+    )
+  }
+  if (impact.backfillJobs > 0) {
+    bullets.push(`Permanently deletes ${plural(impact.backfillJobs, 'backfill job')} and their progress history.`)
+  }
+  if (impact.protectionRules > 0) {
+    bullets.push(`Permanently deletes ${plural(impact.protectionRules, 'field protection rule')} configured on this stream.`)
+  }
   return bullets
 }
 
@@ -58,6 +86,12 @@ function heldDataDependencies(impact: StreamDeleteImpactState | undefined): Dang
       label: plural(impact.pendingReplayJobs, 'pending replay job'),
       detail: 'not yet delivered; deleted with the stream',
     })
+  }
+  if (impact.routes > 0) {
+    deps.push({ label: plural(impact.routes, 'route'), detail: 'deleted with the stream' })
+  }
+  if (impact.deliveryLogs > 0) {
+    deps.push({ label: plural(impact.deliveryLogs, 'delivery log'), detail: 'deleted with the stream' })
   }
   return deps
 }

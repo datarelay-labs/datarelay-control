@@ -257,6 +257,7 @@ def _assert_not_already_delivered(
         failover_route_id=None,
         identities=compute_event_identities(events),
         since=row.created_at,
+        known_run_ids=[row.run_id] if row.run_id else [],
     )
     if prior_job is not None:
         raise ReplayAlreadyDeliveredError(
@@ -433,6 +434,7 @@ def replay_delivery_log(
         delivered_events=events,
         source=SUPERSEDE_SOURCE_LOGS_REPLAY,
         detail=f"Logs log #{int(log_id)}",
+        known_run_ids=[row.run_id] if row.run_id else [],
     )
     if superseded_job_ids:
         logger.info(

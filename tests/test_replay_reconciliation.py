@@ -47,6 +47,8 @@ def _record(
     events: list[dict[str, Any]] | None = None,
     *,
     error: Exception | None = None,
+    window: str | None = "w1",
+    run_id: str | None = None,
 ) -> StreamReplayEvent | None:
     row = record_stream_replay_event(
         db,
@@ -59,6 +61,8 @@ def _record(
         prefix_context=None,
         error=error if error is not None else DestinationSendError("HTTP 500"),
         route_id=int(seeded["route_ids"][0]),
+        source_window=window,
+        run_id=run_id,
     )
     db.commit()
     return row
@@ -69,7 +73,14 @@ def _job_count(db: Session, seeded: dict[str, Any]) -> int:
     return db.query(StreamReplayEvent).filter(StreamReplayEvent.stream_id == int(seeded["stream_id"])).count()
 
 
-def _supersede(db: Session, seeded: dict[str, Any], events: list[dict[str, Any]]) -> list[int]:
+def _supersede(
+    db: Session,
+    seeded: dict[str, Any],
+    events: list[dict[str, Any]],
+    *,
+    window: str | None = "w1",
+    run_ids: tuple[str, ...] = (),
+) -> list[int]:
     ids = supersede_delivered_jobs(
         db,
         stream_id=int(seeded["stream_id"]),
@@ -77,6 +88,8 @@ def _supersede(db: Session, seeded: dict[str, Any], events: list[dict[str, Any]]
         route_id=int(seeded["route_ids"][0]),
         delivered_events=events,
         source=SUPERSEDE_SOURCE_RUNTIME_DELIVERY,
+        window=window,
+        known_run_ids=run_ids,
     )
     db.commit()
     return ids
@@ -142,6 +155,55 @@ def test_closed_job_is_not_reused_for_a_new_failure(db_session: Session, termina
     assert again is not None and again.id != first.id
 
 
+def test_pushes_without_a_window_are_never_folded_together(db_session: Session) -> None:
+    """Codex P1: independent webhook pushes with identical payloads stay separate jobs."""
+
+    seeded = _seed_stream_runtime(db_session)
+    a = _record(db_session, seeded, window=None, run_id="push-1")
+    b = _record(db_session, seeded, window=None, run_id="push-2")
+    assert a is not None and b is not None
+    assert a.id != b.id
+    assert _job_count(db_session, seeded) == 2
+
+
+def test_different_windows_with_same_content_are_separate_jobs(db_session: Session) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    a = _record(db_session, seeded, window="w1", run_id="r1")
+    b = _record(db_session, seeded, window="w2", run_id="r2")
+    c = _record(db_session, seeded, window="w1", run_id="r3")
+    assert a is not None and b is not None and c is not None
+    assert a.id != b.id and a.id == c.id
+    db_session.refresh(a)
+    assert a.delivery_context_json["run_ids"] == ["r1", "r3"]
+
+
+def test_delivery_of_another_push_does_not_supersede_an_undelivered_push(db_session: Session) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    failed_push = _record(db_session, seeded, window=None, run_id="push-1")
+    assert failed_push is not None
+    # An identical later push (different run, no window) delivered fine: push-1 was NOT delivered.
+    assert _supersede(db_session, seeded, list(_EVENTS), window=None, run_ids=("push-2",)) == []
+    # A different window does not close it either.
+    assert _supersede(db_session, seeded, list(_EVENTS), window="w9") == []
+    db_session.refresh(failed_push)
+    assert failed_push.status == REPLAY_STATUS_PENDING
+    # Only the same run (e.g. retry/failover inside that push) proves the occurrence.
+    assert _supersede(db_session, seeded, list(_EVENTS), window=None, run_ids=("push-1",)) == [int(failed_push.id)]
+
+
+def test_logs_replay_does_not_supersede_job_of_another_run(db_session: Session) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    other_push_job = _record(db_session, seeded, window=None, run_id="some-other-push")
+    log_row = _failed_log(db_session, seeded, _EVENTS)  # run_id == "run-wpe"
+    assert other_push_job is not None
+    replay_service.replay_delivery_log(
+        db_session, int(log_row.id), destination_registry=DestinationAdapterRegistry(webhook_sender=_FakeWebhookSender())
+    )
+    db_session.commit()
+    db_session.refresh(other_push_job)
+    assert other_push_job.status == REPLAY_STATUS_PENDING
+
+
 # --------------------------------------------------------------------------- E-113
 
 
@@ -180,6 +242,7 @@ def test_partial_or_foreign_delivery_leaves_job_executable(db_session: Session) 
             route_id=int(seeded["route_ids"][1]),
             delivered_events=list(_EVENTS),
             source=SUPERSEDE_SOURCE_RUNTIME_DELIVERY,
+            window="w1",
         )
         == []
     )
@@ -197,7 +260,7 @@ def test_superset_delivery_supersedes_job(db_session: Session) -> None:
 def test_runner_failure_poll_dedupes_then_recovery_supersedes(db_session: Session) -> None:
     """E-114 + E-113 end to end: failing polls keep one job; a healthy poll closes it."""
 
-    seeded = _seed_stream_runtime(db_session)
+    seeded = _seed_stream_runtime(db_session, failure_policies=["RETRY_AND_BACKOFF"])
     url = "https://receiver-0.example.com/events"
     sender = _FakeWebhookSender(fail_urls={url})
     items = [{"id": f"evt-{i}", "message": f"m{i}", "vendor": "V"} for i in range(1, 4)]
@@ -224,8 +287,12 @@ def test_runner_failure_poll_dedupes_then_recovery_supersedes(db_session: Sessio
     assert job.delivery_context_json["reconciliation"]["source"] == SUPERSEDE_SOURCE_RUNTIME_DELIVERY
 
 
-def test_replayed_sibling_blocks_second_execute_without_override(db_session: Session) -> None:
-    """Legacy duplicate jobs (#33..#37 in the audit): replaying one must not re-send the rest."""
+def test_replayed_sibling_blocks_legacy_duplicate_without_override(db_session: Session) -> None:
+    """Legacy duplicate jobs (#33..#37 in the audit): replaying one must not silently re-send the rest.
+
+    Legacy rows carry no occurrence identity, so they are never auto-closed (that could drop an
+    undelivered occurrence) but the execute guard refuses them until the operator overrides.
+    """
 
     seeded = _seed_stream_runtime(db_session)
     now = datetime.now(timezone.utc)
@@ -238,7 +305,6 @@ def test_replayed_sibling_blocks_second_execute_without_override(db_session: Ses
             delivery_kind="base_route",
             status=REPLAY_STATUS_PENDING,
             protected_payload_json={"events": list(_EVENTS)},
-            # Legacy rows carry no identity metadata at all.
             delivery_context_json={"destination_type": "WEBHOOK_POST", "replay_origin": "delivery_failure"},
             event_count=len(_EVENTS),
             created_at=now - timedelta(minutes=10 - i),
@@ -254,16 +320,41 @@ def test_replayed_sibling_blocks_second_execute_without_override(db_session: Ses
     db_session.commit()
     assert len(sender.calls) == 1
 
-    db_session.expire_all()
     for sibling in rows[1:]:
-        refreshed = db_session.get(StreamReplayEvent, int(sibling.id))
-        assert refreshed is not None
-        assert refreshed.status == REPLAY_STATUS_DISCARDED
-        assert refreshed.delivery_context_json["reconciliation"]["source"] == "replay_job"
         with pytest.raises(ReplayEventStateError) as exc:
             execute_replay_event(db_session, int(sibling.id), destination_registry=registry)
-        assert exc.value.error_code == "REPLAY_SUPERSEDED"
+        assert exc.value.error_code == "REPLAY_ALREADY_DELIVERED"
     assert len(sender.calls) == 1
+    # Explicit override still works.
+    execute_replay_event(db_session, int(rows[1].id), destination_registry=registry, allow_redelivery=True)
+    assert len(sender.calls) == 2
+
+
+def test_replay_job_supersedes_same_window_siblings(db_session: Session) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    first = _record(db_session, seeded, window="w1", run_id="run-a")
+    # Force a second open job for the same window (e.g. rows recorded before dedup existed).
+    twin = StreamReplayEvent(
+        stream_id=first.stream_id,
+        destination_id=first.destination_id,
+        route_id=first.route_id,
+        delivery_kind="base_route",
+        status=REPLAY_STATUS_PENDING,
+        protected_payload_json=first.protected_payload_json,
+        delivery_context_json=dict(first.delivery_context_json),
+        event_count=first.event_count,
+    )
+    db_session.add(twin)
+    db_session.commit()
+
+    sender = _ReplayWebhookSender()
+    execute_replay_event(
+        db_session, int(first.id), destination_registry=DestinationAdapterRegistry(webhook_sender=sender)
+    )
+    db_session.commit()
+    db_session.refresh(twin)
+    assert twin.status == REPLAY_STATUS_DISCARDED
+    assert twin.delivery_context_json["reconciliation"]["source"] == "replay_job"
 
 
 def test_execute_guard_blocks_then_override_delivers(db_session: Session) -> None:
@@ -354,7 +445,7 @@ def _failed_log(db: Session, seeded: dict[str, Any], events: list[dict[str, Any]
 
 def test_logs_replay_supersedes_open_job_for_same_events(db_session: Session) -> None:
     seeded = _seed_stream_runtime(db_session)
-    job = _record(db_session, seeded)
+    job = _record(db_session, seeded, run_id="run-wpe")
     log_row = _failed_log(db_session, seeded, _EVENTS)
     assert job is not None
 
@@ -379,7 +470,7 @@ def test_logs_replay_supersedes_open_job_for_same_events(db_session: Session) ->
 
 def test_logs_replay_blocked_after_job_replayed_and_override_allowed(db_session: Session) -> None:
     seeded = _seed_stream_runtime(db_session)
-    job = _record(db_session, seeded)
+    job = _record(db_session, seeded, run_id="run-wpe")
     log_row = _failed_log(db_session, seeded, _EVENTS)
     assert job is not None
     execute_replay_event(

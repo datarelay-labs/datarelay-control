@@ -19,6 +19,8 @@ from app.replay.models import (
     REPLAY_CONTEXT_FAILURE_OCCURRENCES_KEY,
     REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE,
     REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_RUN_IDS_KEY,
+    REPLAY_CONTEXT_SOURCE_WINDOW_KEY,
     REPLAY_STATUS_PENDING,
     StreamReplayEvent,
 )
@@ -60,6 +62,8 @@ def build_delivery_context_json(
     formatter_override: dict[str, Any] | None,
     prefix_context: MessagePrefixResolveContext | None,
     event_identities: list[str] | None = None,
+    source_window: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     context: dict[str, Any] = {
         "destination_type": str(destination_type or "").strip().upper(),
@@ -71,6 +75,10 @@ def build_delivery_context_json(
         context[REPLAY_CONTEXT_EVENT_IDENTITIES_KEY] = list(event_identities)
         context[REPLAY_CONTEXT_EVENTS_FINGERPRINT_KEY] = identities_fingerprint(event_identities)
         context[REPLAY_CONTEXT_FAILURE_OCCURRENCES_KEY] = 1
+    if source_window:
+        context[REPLAY_CONTEXT_SOURCE_WINDOW_KEY] = str(source_window)
+    if run_id:
+        context[REPLAY_CONTEXT_RUN_IDS_KEY] = [str(run_id)]
     return context
 
 
@@ -93,12 +101,16 @@ def record_stream_replay_event(
     route_id: int | None = None,
     dynamic_route_id: int | None = None,
     failover_route_id: int | None = None,
+    source_window: str | None = None,
+    run_id: str | None = None,
 ) -> StreamReplayEvent | None:
     """Persist a replay event when a destination delivery finally failed.
 
     A held checkpoint window re-fails the same events on every poll. When an open job
-    already covers exactly these events for the same Stream / Route / Destination, the
-    failure is folded into it (occurrence count) instead of creating another job (E-114).
+    already covers exactly these events for the same Stream / Route / Destination *and the
+    same checkpoint window* (``source_window``), the failure is folded into it (occurrence
+    count) instead of creating another job (E-114). Push sources (webhooks) have no window:
+    every push keeps its own recoverable job even when payloads are identical.
     """
 
     if delivery_kind not in DELIVERY_KINDS:
@@ -124,9 +136,10 @@ def record_stream_replay_event(
             failover_route_id=int(failover_route_id) if failover_route_id is not None else None,
             delivery_kind=delivery_kind,
             identities=identities,
+            window=source_window,
         )
         if existing is not None:
-            note_repeated_failure(existing, error=error, now=now)
+            note_repeated_failure(existing, error=error, now=now, run_id=run_id)
             db.flush()
             return existing
     except Exception:
@@ -146,6 +159,8 @@ def record_stream_replay_event(
             formatter_override=formatter_override,
             prefix_context=prefix_context,
             event_identities=identities,
+            source_window=source_window,
+            run_id=run_id,
         ),
         error_type=type(error).__name__ if error is not None else None,
         error_message=str(error)[:2000] if error is not None else None,

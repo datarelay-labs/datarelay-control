@@ -44,6 +44,7 @@ export type DangerousActionDialogProps = {
 
 function formatDependency(dep: DangerousActionDependency): string {
   if (dep.count != null) {
+    // The count is a plain number: the label already carries the noun (E-131: no "0s" / "4s").
     return `${dep.label}: ${dep.count}${dep.detail ? ` (${dep.detail})` : ''}`
   }
   return dep.detail ? `${dep.label} (${dep.detail})` : dep.label

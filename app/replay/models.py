@@ -53,6 +53,12 @@ REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY = "quarantine_event_id"
 REPLAY_CONTEXT_EVENT_IDENTITIES_KEY = "event_identities"
 REPLAY_CONTEXT_EVENTS_FINGERPRINT_KEY = "events_fingerprint"
 REPLAY_CONTEXT_FAILURE_OCCURRENCES_KEY = "failure_occurrences"
+# Source-occurrence identity. ``source_window`` is the checkpoint-window anchor of a polled
+# run (identical across retries of a held window); ``run_ids`` are the runs that recorded the
+# failure. Push sources (webhooks) have no window, so their jobs are never merged or closed by
+# another push's outcome. Rows without either key are legacy rows of unknown occurrence.
+REPLAY_CONTEXT_SOURCE_WINDOW_KEY = "source_window"
+REPLAY_CONTEXT_RUN_IDS_KEY = "run_ids"
 REPLAY_CONTEXT_LAST_FAILURE_AT_KEY = "last_failure_at"
 # Set when a job was closed because its events reached the destination by another path.
 REPLAY_CONTEXT_RECONCILIATION_KEY = "reconciliation"

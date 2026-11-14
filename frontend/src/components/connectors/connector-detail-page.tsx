@@ -192,11 +192,27 @@ export function ConnectorDetailPage() {
     (ctx: { method: AuthTestHttpMethod; testPath: string; jsonBody: unknown | undefined }) => {
       if (!form) throw new Error('Connector configuration is still loading.')
       const sourceType = String(form.source_type ?? 'HTTP_API_POLLING').toUpperCase()
+      // The test must reflect what is on screen (E-009): every connector family sends its visible draft
+      // together with the saved connector id. The server overlays the draft on the saved row and resolves
+      // masked / blank secret fields from the saved row only while the destination is unchanged.
+      if (sourceType === 'S3_OBJECT_POLLING' || sourceType === 'S3') {
+        if (!(form.endpoint_url ?? '').trim() || !(form.bucket ?? '').trim()) {
+          throw new Error('Endpoint URL and bucket are required before running an S3 connectivity test.')
+        }
+      } else if (sourceType === 'DATABASE_QUERY') {
+        if (!(form.host ?? '').trim() || !(form.database ?? '').trim()) {
+          throw new Error('Database host and database name are required before running a database connectivity test.')
+        }
+      } else if (sourceType === 'REMOTE_FILE_POLLING' || sourceType === 'REMOTE_FILE') {
+        if (!(form.host ?? '').trim()) {
+          throw new Error('Host is required before running a remote file connectivity test.')
+        }
+      } else if (!(form.base_url ?? form.host ?? '').trim()) {
+        throw new Error('Host / Base URL is required before running an auth test.')
+      }
       return {
         connector_id: Number(connectorId),
-        ...(sourceType === 'HTTP_API_POLLING'
-          ? { inline_flat_source: connectorWritePayloadToInlineFlatSource(form) }
-          : {}),
+        inline_flat_source: connectorWritePayloadToInlineFlatSource(form),
         method: ctx.method,
         test_path: ctx.testPath,
         json_body: ctx.jsonBody,

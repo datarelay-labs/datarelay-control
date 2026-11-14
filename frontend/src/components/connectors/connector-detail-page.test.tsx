@@ -287,3 +287,177 @@ describe('ConnectorDetailPage Webhook Receiver surface', () => {
     expect(runConnectorAuthTestMock).not.toHaveBeenCalled()
   })
 })
+
+describe('ConnectorDetailPage connectivity test reflects the visible draft for non-HTTP connectors (E-009)', () => {
+  afterEach(() => {
+    clearTestSession()
+    vi.clearAllMocks()
+  })
+
+  function renderDetail(row: Record<string, unknown>) {
+    fetchConnectorByIdMock.mockResolvedValue({
+      id: 10,
+      description: '',
+      status: 'STOPPED',
+      source_id: 11,
+      stream_count: 0,
+      auth_type: 'no_auth',
+      auth: { auth_type: 'no_auth' },
+      ...row,
+    })
+    runConnectorAuthTestMock.mockResolvedValue({ ok: false, auth_type: 'X', message: 'failed' })
+    return render(
+      <MemoryRouter initialEntries={['/connectors/10']}>
+        <Routes>
+          <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('sends the edited database host and password together with the saved connector id', async () => {
+    renderDetail({
+      name: 'bfs-b1-pg',
+      connector_type: 'relational_database',
+      source_type: 'DATABASE_QUERY',
+      host: 'db.saved.example',
+      port: 5432,
+      database: 'audit',
+      db_type: 'POSTGRESQL',
+      db_username: 'bfs_reader',
+      db_password_configured: true,
+      ssl_mode: 'PREFER',
+    })
+    const user = userEvent.setup()
+
+    const host = await screen.findByLabelText('Database host')
+    await user.clear(host)
+    await user.type(host, '203.0.113.9')
+    const password = screen.getByLabelText('Password *')
+    await user.clear(password)
+    await user.type(password, 'typed-wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Test database connectivity' }))
+
+    await waitFor(() => expect(runConnectorAuthTestMock).toHaveBeenCalledTimes(1))
+    expect(runConnectorAuthTestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connector_id: 10,
+        inline_flat_source: expect.objectContaining({
+          source_type: 'DATABASE_QUERY',
+          host: '203.0.113.9',
+          password: 'typed-wrong-password',
+        }),
+      }),
+    )
+  })
+
+  it('keeps the masked saved database password as the mask so the server resolves it', async () => {
+    renderDetail({
+      name: 'bfs-b1-pg',
+      connector_type: 'relational_database',
+      source_type: 'DATABASE_QUERY',
+      host: 'db.saved.example',
+      port: 5432,
+      database: 'audit',
+      db_type: 'POSTGRESQL',
+      db_username: 'bfs_reader',
+      db_password_configured: true,
+    })
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Database host')
+    await user.click(screen.getByRole('button', { name: 'Test database connectivity' }))
+
+    await waitFor(() => expect(runConnectorAuthTestMock).toHaveBeenCalledTimes(1))
+    const sent = runConnectorAuthTestMock.mock.calls[0][0]
+    expect(sent.connector_id).toBe(10)
+    expect(sent.inline_flat_source.password).toBe('********')
+  })
+
+  it('sends the edited S3 secret key and region together with the saved connector id', async () => {
+    renderDetail({
+      name: 'bfs-b1-s3',
+      connector_type: 's3_compatible',
+      source_type: 'S3_OBJECT_POLLING',
+      endpoint_url: 'http://s3.saved.example:9000',
+      bucket: 'audit-bucket',
+      region: 'us-east-1',
+      access_key: 'AKSAVED',
+      secret_key_configured: true,
+    })
+    const user = userEvent.setup()
+
+    const secret = await screen.findByLabelText('S3 Secret key')
+    await user.clear(secret)
+    await user.type(secret, 'typed-wrong-secret')
+    const region = screen.getByLabelText('S3 Region')
+    await user.clear(region)
+    await user.type(region, 'eu-west-9')
+    await user.click(screen.getByRole('button', { name: 'Test S3 connectivity' }))
+
+    await waitFor(() => expect(runConnectorAuthTestMock).toHaveBeenCalledTimes(1))
+    expect(runConnectorAuthTestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connector_id: 10,
+        inline_flat_source: expect.objectContaining({
+          source_type: 'S3_OBJECT_POLLING',
+          secret_key: 'typed-wrong-secret',
+          region: 'eu-west-9',
+        }),
+      }),
+    )
+  })
+
+  it('sends the edited remote-file password together with the saved connector id', async () => {
+    renderDetail({
+      name: 'bfs-b1-sftp',
+      connector_type: 'remote_file',
+      source_type: 'REMOTE_FILE_POLLING',
+      host: 'sftp.saved.example',
+      port: 22,
+      remote_username: 'bfs',
+      remote_password_configured: true,
+      remote_file_protocol: 'sftp',
+    })
+    const user = userEvent.setup()
+
+    const password = await screen.findByLabelText(/^Password/)
+    await user.clear(password)
+    await user.type(password, 'typed-wrong-password')
+    await user.type(screen.getByLabelText('Remote directory *'), '/incoming')
+    await user.click(screen.getByRole('button', { name: 'Test remote file connectivity' }))
+
+    await waitFor(() => expect(runConnectorAuthTestMock).toHaveBeenCalledTimes(1))
+    expect(runConnectorAuthTestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connector_id: 10,
+        inline_flat_source: expect.objectContaining({
+          source_type: 'REMOTE_FILE_POLLING',
+          remote_password: 'typed-wrong-password',
+        }),
+        remote_file_stream_config: expect.objectContaining({ remote_directory: '/incoming' }),
+      }),
+    )
+  })
+
+  it('explains what is missing instead of sending an unusable draft', async () => {
+    renderDetail({
+      name: 'bfs-b1-pg',
+      connector_type: 'relational_database',
+      source_type: 'DATABASE_QUERY',
+      host: 'db.saved.example',
+      port: 5432,
+      database: 'audit',
+      db_type: 'POSTGRESQL',
+      db_username: 'bfs_reader',
+      db_password_configured: true,
+    })
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText('Database host'))
+    await user.click(screen.getByRole('button', { name: 'Test database connectivity' }))
+
+    expect(await screen.findByText(/Database host and database name are required/)).toBeInTheDocument()
+    expect(runConnectorAuthTestMock).not.toHaveBeenCalled()
+  })
+})

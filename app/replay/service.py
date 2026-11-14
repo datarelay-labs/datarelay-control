@@ -60,6 +60,8 @@ from app.replay.reconciliation import (
     is_superseded,
     reconciliation_info,
     row_identities,
+    run_ids,
+    source_window,
     supersede_delivered_jobs,
 )
 
@@ -472,6 +474,8 @@ def execute_replay_event(
             identities=row_identities(row),
             since=row.created_at,
             exclude_id=int(row.id),
+            window=source_window(row),
+            known_run_ids=run_ids(row),
         )
         if prior is not None:
             raise ReplayEventStateError(
@@ -667,6 +671,8 @@ def execute_replay_event(
             source=SUPERSEDE_SOURCE_REPLAY_JOB,
             detail=f"replay job #{int(row.id)}",
             exclude_ids=(int(row.id),),
+            window=source_window(row),
+            known_run_ids=run_ids(row),
         )
     return {
         **replay_event_to_dict(row),

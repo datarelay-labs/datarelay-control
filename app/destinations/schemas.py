@@ -90,6 +90,17 @@ class DestinationListItem(DestinationRead):
     routes: list[DestinationRouteUsage]
 
 
+class DestinationDeleteImpact(BaseModel):
+    """What deleting a destination retains (delivery logs) and removes (replay jobs)."""
+
+    destination_id: int
+    routes: int
+    streams: int
+    delivery_logs_retained: int
+    pending_replay_jobs: int
+    completed_replay_jobs: int
+
+
 class DestinationTestResult(BaseModel):
     """Result of POST /destinations/{id}/test (connectivity probe)."""
 

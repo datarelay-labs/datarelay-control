@@ -18,6 +18,7 @@ const ROUTE_DELETE_IMPACT_BULLETS = [
   'Permanently removes transform, protection, classification, and policy configuration for this path.',
   'Historical delivery logs are kept, but they are no longer associated with this path.',
   'Analytics recorded for this path are removed, so it stops appearing in charts and totals.',
+  'Quarantine events and replay jobs of this path are kept, but they are no longer associated with it.',
 ] as const
 
 export function routeDeleteImpactBullets(hasUnsavedPrefix: boolean): string[] {
