@@ -1064,7 +1064,7 @@ export function StreamEditWizardPage({
     runtimeVerificationBlockedNow,
   ])
 
-  // Count quarantined events and pending replay jobs every time the dialog opens; the delete is
+  // Count held data and history (quarantine, replay, backfill, protection, routes, logs) every time the dialog opens; the delete is
   // blocked until the count is known so held data is never destroyed unseen.
   useEffect(() => {
     if (!streamDeleteOpen || backendStreamId == null) return
@@ -1077,6 +1077,12 @@ export function StreamEditWizardPage({
           status: 'ready',
           quarantinedEvents: impact.quarantined_events,
           pendingReplayJobs: impact.pending_replay_jobs,
+          resolvedQuarantineEvents: impact.resolved_quarantine_events,
+          completedReplayJobs: impact.completed_replay_jobs,
+          backfillJobs: impact.backfill_jobs,
+          protectionRules: impact.protection_rules,
+          routes: impact.routes,
+          deliveryLogs: impact.delivery_logs,
         })
       })
       .catch((e: unknown) => {
@@ -1369,6 +1375,11 @@ export function StreamEditWizardPage({
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
               Delete
             </button>
+          ) : null}
+          {canMutateWorkspace && backendStreamId != null && !embedded && runtimeStatus === 'RUNNING' ? (
+            <span className="text-xs text-slate-500 dark:text-gdc-muted" data-testid="stream-delete-running-hint">
+              Stop the stream to delete it.
+            </span>
           ) : null}
         </div>
       </div>

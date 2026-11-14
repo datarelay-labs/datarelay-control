@@ -135,11 +135,14 @@ def test_delete_impact_counts_only_open_quarantine_and_non_terminal_replay(
 
     res = client.get(f"/api/v1/streams/{stream.id}/delete-impact")
     assert res.status_code == 200
-    assert res.json() == {
-        "stream_id": stream.id,
-        "quarantined_events": 3,
-        "pending_replay_jobs": 3,
-    }
+    body = res.json()
+    assert body["stream_id"] == stream.id
+    assert body["quarantined_events"] == 3
+    assert body["pending_replay_jobs"] == 3
+    # E-130: already-resolved history is reported separately (full coverage in
+    # tests/test_delete_lifecycle_impact.py).
+    assert body["resolved_quarantine_events"] == 2
+    assert body["completed_replay_jobs"] == 2
 
 
 def test_delete_impact_is_zero_for_a_stream_without_held_data(client: TestClient, db_session: Session) -> None:

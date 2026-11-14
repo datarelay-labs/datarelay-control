@@ -205,7 +205,7 @@ async def update_stream(stream_id: int, payload: StreamUpdate, request: Request,
 async def get_stream_delete_impact(
     stream_id: int, db: Session = Depends(get_db_read_bounded)
 ) -> StreamDeleteImpact:
-    """Counts of quarantined events and pending replay jobs a delete would destroy."""
+    """Counts of held data and history (quarantine, replay, backfill, protection, routes, logs) a delete destroys."""
 
     if streams_repository.get_stream_by_id(db, stream_id) is None:
         raise HTTPException(
@@ -254,6 +254,12 @@ async def delete_stream(stream_id: int, request: Request, db: Session = Depends(
             details={
                 "quarantined_events_deleted": impact["quarantined_events"],
                 "pending_replay_jobs_deleted": impact["pending_replay_jobs"],
+                "resolved_quarantine_events_deleted": impact["resolved_quarantine_events"],
+                "completed_replay_jobs_deleted": impact["completed_replay_jobs"],
+                "backfill_jobs_deleted": impact["backfill_jobs"],
+                "protection_rules_deleted": impact["protection_rules"],
+                "routes_deleted": impact["routes"],
+                "delivery_logs_deleted": impact["delivery_logs"],
             },
             request=request,
         )

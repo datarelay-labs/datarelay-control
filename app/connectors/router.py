@@ -1455,13 +1455,17 @@ async def delete_connector(connector_id: int, request: Request, db: Session = De
     row = db.query(Connector).filter(Connector.id == connector_id).first()
     if row is None:
         raise _not_found(connector_id)
-    stream_exists = db.query(Stream.id).filter(Stream.connector_id == row.id).first() is not None
-    if stream_exists:
+    stream_count = int(db.query(func.count(Stream.id)).filter(Stream.connector_id == row.id).scalar() or 0)
+    if stream_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error_code": "CONNECTOR_HAS_STREAMS",
-                "message": "connector has streams; delete or reassign streams first",
+                "message": (
+                    f"Connector is still used by {stream_count} stream{'' if stream_count == 1 else 's'}. "
+                    "Delete those streams first, then delete the connector."
+                ),
+                "stream_count": stream_count,
             },
         )
     name = str(row.name)
