@@ -260,7 +260,10 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
                         "Replay execution requires Governance Operator role.",
                     )
             elif "/governance/replay" in path and (
-                path.endswith("/execute") or path.endswith("/bulk-execute")
+                path.endswith("/execute")
+                or path.endswith("/bulk-execute")
+                or path.endswith("/discard")
+                or path.endswith("/bulk-discard")
             ):
                 if not can_replay_action(role):
                     return AccessDenied(

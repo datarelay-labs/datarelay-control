@@ -384,4 +384,205 @@ describe('ReplayCenterPage', () => {
     expect(screen.getByLabelText('Stream')).toBeInTheDocument()
     expect(screen.getByLabelText('Status')).toBeInTheDocument()
   })
+
+  it('links delivery-failure jobs to the failing Route records, not the quarantine stage (E-115)', async () => {
+    const deliveryEntry = { ...sampleEntry, route_id: 22, destination_id: 5 }
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [deliveryEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue({
+      ...sampleDetail,
+      entry: deliveryEntry,
+      source: { origin: 'Delivery failure recovery', violation: null, quarantine: null },
+    })
+
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-row-7'))
+
+    const href = (await screen.findByTestId('replay-view-logs')).getAttribute('href') ?? ''
+    expect(href).toContain('stream_id=10')
+    expect(href).toContain('route_id=22')
+    expect(href).not.toContain('quarantine_event_created')
+  })
+
+  it('keeps the quarantine-stage Logs link for quarantine recoveries', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue(sampleDetail)
+
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-row-7'))
+    expect((await screen.findByTestId('replay-view-logs')).getAttribute('href')).toContain('quarantine_event_created')
+  })
+
+  it('bulk dialog dependency line has no stray plural suffix (E-115)', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 2,
+      replay_events: [sampleEntry, failedEntry],
+      queue_count: 1,
+      failed_count: 1,
+      recent_count: 0,
+    })
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-select-7'))
+    await user.click(await screen.findByTestId('replay-select-8'))
+    await user.click(await screen.findByTestId('replay-bulk-execute'))
+
+    const deps = await screen.findByTestId('replay-center-execute-dialog-dependencies')
+    expect(deps.textContent).toContain('Selected replay jobs: 2')
+    expect(deps.textContent).not.toContain('2s')
+  })
+
+  it('discards a pending job from the drawer after confirmation (E-116)', async () => {
+    const events = {
+      window: '24h' as const,
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    }
+    const fetchSpy = vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue(events)
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue({ ...sampleDetail, can_discard: true })
+    const discardSpy = vi
+      .spyOn(gdcGovernanceReplay, 'discardGovernanceReplay')
+      .mockResolvedValue({ id: 7, outcome: 'discarded', message: 'Replay job discarded; no events were delivered.' })
+
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-row-7'))
+    await user.click(await screen.findByTestId('replay-action-discard'))
+
+    expect(await screen.findByTestId('replay-center-discard-dialog')).toBeInTheDocument()
+    expect(discardSpy).not.toHaveBeenCalled()
+    await user.click(screen.getByTestId('replay-center-discard-dialog-confirm'))
+
+    await waitFor(() => expect(discardSpy).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('offers no discard action to read-only roles or for non-discardable jobs', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue({ ...sampleDetail, can_discard: false })
+    renderPage(['/governance/replay?id=7'])
+    await waitFor(() => expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument())
+    expect(screen.queryByTestId('replay-action-discard')).not.toBeInTheDocument()
+  })
+
+  it('bulk discard requires typing DISCARD', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 2,
+      replay_events: [sampleEntry, failedEntry],
+      queue_count: 1,
+      failed_count: 1,
+      recent_count: 0,
+    })
+    const bulkSpy = vi.spyOn(gdcGovernanceReplay, 'bulkDiscardGovernanceReplay').mockResolvedValue({
+      total: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [
+        { id: 7, outcome: 'discarded', message: 'ok' },
+        { id: 8, outcome: 'discarded', message: 'ok' },
+      ],
+    })
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-select-7'))
+    await user.click(await screen.findByTestId('replay-select-8'))
+    await user.click(await screen.findByTestId('replay-bulk-discard'))
+    await user.type(await screen.findByTestId('replay-center-discard-dialog-type-name'), 'DISCARD')
+    await user.click(screen.getByTestId('replay-center-discard-dialog-confirm'))
+    await waitFor(() => expect(bulkSpy).toHaveBeenCalledWith([7, 8]))
+  })
+
+  it('requires an explicit override when the events were already delivered (E-113)', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue(sampleDetail)
+    const execSpy = vi
+      .spyOn(gdcGovernanceReplay, 'executeGovernanceReplay')
+      .mockResolvedValueOnce({
+        id: 7,
+        outcome: 'failed',
+        message: 'These events were already delivered to this destination.',
+        error_code: 'REPLAY_ALREADY_DELIVERED',
+      })
+      .mockResolvedValueOnce({ id: 7, outcome: 'replayed', message: 'ok' })
+
+    renderPage(['/governance/replay?id=7'])
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-action-execute'))
+    await user.click(await screen.findByTestId('replay-center-execute-dialog-confirm'))
+
+    await waitFor(() => expect(execSpy).toHaveBeenCalledTimes(1))
+    expect(execSpy).toHaveBeenLastCalledWith(7)
+    const dialog = await screen.findByTestId('replay-center-execute-dialog')
+    expect(dialog).toHaveTextContent('already delivered')
+    expect(screen.getByTestId('replay-center-execute-dialog-confirm')).toHaveTextContent(/Replay anyway/)
+
+    await user.click(screen.getByTestId('replay-center-execute-dialog-confirm'))
+    await waitFor(() => expect(execSpy).toHaveBeenCalledTimes(2))
+    expect(execSpy).toHaveBeenLastCalledWith(7, { allowRedelivery: true })
+  })
+
+  it('explains superseded jobs and shows the repeat count (E-113, E-114)', async () => {
+    const superseded = {
+      ...sampleEntry,
+      status: 'DISCARDED' as const,
+      outcome: 'Discarded' as const,
+      occurrence_count: 5,
+      status_note: 'These events were later delivered to this destination automatically.',
+    }
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [superseded],
+      queue_count: 0,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue({
+      ...sampleDetail,
+      entry: superseded,
+      can_execute: false,
+      can_discard: false,
+    })
+    renderPage()
+    expect(await screen.findByTestId('replay-occurrences-7')).toHaveTextContent('\u00d75')
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('replay-row-7'))
+    expect(await screen.findByTestId('replay-status-note')).toHaveTextContent('delivered to this destination automatically')
+    expect(screen.queryByTestId('replay-action-execute')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('replay-action-discard')).not.toBeInTheDocument()
+  })
 })

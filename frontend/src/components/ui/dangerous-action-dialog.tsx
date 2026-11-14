@@ -44,8 +44,7 @@ export type DangerousActionDialogProps = {
 
 function formatDependency(dep: DangerousActionDependency): string {
   if (dep.count != null) {
-    const suffix = dep.count === 1 ? '' : 's'
-    return `${dep.label}: ${dep.count}${suffix}${dep.detail ? ` (${dep.detail})` : ''}`
+    return `${dep.label}: ${dep.count}${dep.detail ? ` (${dep.detail})` : ''}`
   }
   return dep.detail ? `${dep.label} (${dep.detail})` : dep.label
 }

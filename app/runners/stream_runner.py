@@ -1257,6 +1257,12 @@ class StreamRunner(BaseRunner):
                     route_id=route_id,
                     log_fn=self._log,
                 )
+            self._reconcile_replay_after_delivery(
+                stream=stream,
+                events=route_events,
+                destination_id=destination_id,
+                route_id=route_id,
+            )
             return RouteSendOutcome(success=True, latency_ms=latency_ms, adapter_stage="route_send_success")
         except Exception as exc:
             latency_ms = max(0, int((time.monotonic() - send_started) * 1000))
@@ -1863,6 +1869,13 @@ class StreamRunner(BaseRunner):
                     "latency_ms": latency_ms,
                 }
             )
+            self._reconcile_replay_after_delivery(
+                stream=stream,
+                events=events,
+                destination_id=binding.secondary_destination_id,
+                route_id=route_id,
+                failover_route_id=int(binding.failover_route_id),
+            )
             return FailoverAttemptResult(attempted=True, succeeded=True, secondary_send_attempted=True)
         except Exception as secondary_exc:
             latency_ms = max(0, int((time.monotonic() - send_started) * 1000))
@@ -1941,6 +1954,60 @@ class StreamRunner(BaseRunner):
         except Exception:
             logger.exception(
                 "stream_replay_event_record_failed stream_id=%s destination_id=%s",
+                _get(stream, "id"),
+                destination_id,
+            )
+
+    def _reconcile_replay_after_delivery(
+        self,
+        *,
+        stream: Any,
+        events: list[dict[str, Any]],
+        destination_id: Any,
+        route_id: int | None = None,
+        dynamic_route_id: int | None = None,
+        failover_route_id: int | None = None,
+    ) -> None:
+        """Close open replay jobs whose events this successful delivery just delivered.
+
+        A failed Route is retried from the held checkpoint window, so the receiver can get
+        the very events a Replay Center job still holds. Without this the job stays
+        Pending/executable and replaying it later duplicates the delivery (E-113).
+        Best effort: never affects delivery.
+        """
+
+        if self._run_opts.dry_run:
+            return
+        if self._run_opts.replay_start is not None or self._run_opts.replay_end is not None:
+            return
+        try:
+            dest_id = int(destination_id) if destination_id is not None else 0
+        except (TypeError, ValueError):
+            return
+        if not events or dest_id <= 0:
+            return
+        try:
+            from app.replay.reconciliation import SUPERSEDE_SOURCE_RUNTIME_DELIVERY, supersede_delivered_jobs
+
+            stream_id = int(_get(stream, "id"))
+            normalized_route_id = int(route_id) if route_id else None
+
+            def _reconcile(db: Session) -> None:
+                supersede_delivered_jobs(
+                    db,
+                    stream_id=stream_id,
+                    destination_id=dest_id,
+                    route_id=normalized_route_id,
+                    dynamic_route_id=dynamic_route_id,
+                    failover_route_id=failover_route_id,
+                    delivered_events=events,
+                    source=SUPERSEDE_SOURCE_RUNTIME_DELIVERY,
+                )
+
+            self._db_write(_reconcile)
+        except Exception:
+            logger.exception(
+                "replay_reconcile_after_delivery_failed stream_id=%s destination_id=%s",
                 _get(stream, "id"),
                 destination_id,
             )
@@ -2120,6 +2187,12 @@ class StreamRunner(BaseRunner):
                             route_id=route_id,
                             log_fn=self._log,
                         )
+                    self._reconcile_replay_after_delivery(
+                        stream=stream,
+                        events=events,
+                        destination_id=_get(destination, "id"),
+                        route_id=route_id,
+                    )
                     return True
                 except Exception as exc:  # pragma: no cover - defensive
                     last_exc = exc
@@ -2672,6 +2745,12 @@ class StreamRunner(BaseRunner):
                 latency_ms = max(0, int((time.monotonic() - send_started) * 1000))
                 if pending_fps:
                     self._record_route_delivered(state_key, pending_fps)
+                self._reconcile_replay_after_delivery(
+                    stream=stream,
+                    events=send_events,
+                    destination_id=dest_id,
+                    dynamic_route_id=route_id,
+                )
                 self._log(
                     {
                         "stage": "dynamic_route_send_success",

@@ -21,6 +21,12 @@ export type GovernanceReplayEntry = {
   outcome: ReplayOutcomeLabel | null
   event_count: number
   correlation_id: string | null
+  route_id?: number | null
+  destination_id?: number | null
+  /** Failed polls folded into this job (one job per Stream/Route/event set). */
+  occurrence_count?: number
+  /** Explains a non-obvious state, e.g. why a Discarded job was superseded. */
+  status_note?: string | null
 }
 
 export type GovernanceReplayListResponse = {
@@ -74,6 +80,7 @@ export type GovernanceReplayDetailResponse = {
   error_type: string | null
   error_message: string | null
   can_execute: boolean
+  can_discard?: boolean
 }
 
 export type GovernanceReplayBulkItemResult = {
@@ -81,6 +88,15 @@ export type GovernanceReplayBulkItemResult = {
   outcome: string
   message: string
   status?: string | null
+  error_code?: string | null
+}
+
+/** The events of this job were already delivered; replaying again needs an explicit override. */
+export const REPLAY_ALREADY_DELIVERED_CODE = 'REPLAY_ALREADY_DELIVERED'
+
+export type ReplayExecuteOptions = {
+  /** Explicit operator override: replay even though the events were already delivered. */
+  allowRedelivery?: boolean
 }
 
 export type GovernanceReplayBulkResponse = {
@@ -127,17 +143,39 @@ export type GovernanceReplayExecuteResponse = {
   outcome: string
   message: string
   status?: string | null
+  error_code?: string | null
 }
 
-export async function executeGovernanceReplay(replayId: number): Promise<GovernanceReplayExecuteResponse> {
+export async function executeGovernanceReplay(
+  replayId: number,
+  options: ReplayExecuteOptions = {},
+): Promise<GovernanceReplayExecuteResponse> {
   return requestJson<GovernanceReplayExecuteResponse>(`${GOV}/replay/${replayId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify(options.allowRedelivery ? { allow_redelivery: true } : {}),
+  })
+}
+
+export async function bulkExecuteGovernanceReplay(
+  ids: number[],
+  options: ReplayExecuteOptions = {},
+): Promise<GovernanceReplayBulkResponse> {
+  return requestJson<GovernanceReplayBulkResponse>(`${GOV}/replay/bulk-execute`, {
+    method: 'POST',
+    body: JSON.stringify(options.allowRedelivery ? { ids, allow_redelivery: true } : { ids }),
+  })
+}
+
+/** Discard (cancel) open replay jobs; nothing is delivered. */
+export async function discardGovernanceReplay(replayId: number): Promise<GovernanceReplayExecuteResponse> {
+  return requestJson<GovernanceReplayExecuteResponse>(`${GOV}/replay/${replayId}/discard`, {
     method: 'POST',
     body: JSON.stringify({}),
   })
 }
 
-export async function bulkExecuteGovernanceReplay(ids: number[]): Promise<GovernanceReplayBulkResponse> {
-  return requestJson<GovernanceReplayBulkResponse>(`${GOV}/replay/bulk-execute`, {
+export async function bulkDiscardGovernanceReplay(ids: number[]): Promise<GovernanceReplayBulkResponse> {
+  return requestJson<GovernanceReplayBulkResponse>(`${GOV}/replay/bulk-discard`, {
     method: 'POST',
     body: JSON.stringify({ ids }),
   })

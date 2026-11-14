@@ -28,6 +28,12 @@ REPLAY_STATUSES = frozenset(
 
 REPLAY_TERMINAL_STATUSES = frozenset({REPLAY_STATUS_REPLAYED, REPLAY_STATUS_DISCARDED})
 
+# Jobs that still represent an undelivered failure an operator may act on. Used to
+# de-duplicate repeated failure recordings and to reconcile jobs whose events were
+# later delivered (WP-E: E-051 / E-113 / E-114). ``replaying`` is excluded on
+# purpose: an in-flight claim is owned by its executor.
+REPLAY_OPEN_STATUSES = frozenset({REPLAY_STATUS_PENDING, REPLAY_STATUS_FAILED})
+
 # Claim / attempt metadata lives in delivery_context_json["delivery_attempt"] —
 # no schema migration required (status String(16) already fits "replaying").
 DELIVERY_ATTEMPT_CONTEXT_KEY = "delivery_attempt"
@@ -39,6 +45,18 @@ REPLAY_CONTEXT_ORIGIN_KEY = "replay_origin"
 REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE = "delivery_failure"
 REPLAY_CONTEXT_ORIGIN_QUARANTINE = "quarantine"
 REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY = "quarantine_event_id"
+
+# Event identity / reconciliation metadata (stored in delivery_context_json; no migration).
+# ``event_identities`` are occurrence-aware content fingerprints of the recorded events
+# (see ``app.checkpoints.route_delivery_state.event_fingerprints``); ``events_fingerprint``
+# is a single digest of the sorted identity set used to find duplicate open jobs.
+REPLAY_CONTEXT_EVENT_IDENTITIES_KEY = "event_identities"
+REPLAY_CONTEXT_EVENTS_FINGERPRINT_KEY = "events_fingerprint"
+REPLAY_CONTEXT_FAILURE_OCCURRENCES_KEY = "failure_occurrences"
+REPLAY_CONTEXT_LAST_FAILURE_AT_KEY = "last_failure_at"
+# Set when a job was closed because its events reached the destination by another path.
+REPLAY_CONTEXT_RECONCILIATION_KEY = "reconciliation"
+REPLAY_RECONCILIATION_SUPERSEDED = "superseded"
 
 
 def replay_quarantine_event_id(row: "StreamReplayEvent") -> int | None:

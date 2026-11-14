@@ -439,12 +439,16 @@ export async function fetchRuntimeLogTrace(logId: number): Promise<RuntimeTraceR
 /** Replay a failed route delivery log (optional dry-run; does not advance checkpoints). */
 export async function replayDeliveryLog(
   logId: number,
-  options: { dry_run?: boolean } = {},
+  options: { dry_run?: boolean; allow_redelivery?: boolean } = {},
 ): Promise<DeliveryLogReplayResponse> {
   return requestJson<DeliveryLogReplayResponse>(`${RT}/replay/delivery-log/${logId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dry_run: Boolean(options.dry_run) }),
+    body: JSON.stringify(
+      options.allow_redelivery
+        ? { dry_run: Boolean(options.dry_run), allow_redelivery: true }
+        : { dry_run: Boolean(options.dry_run) },
+    ),
   })
 }
 

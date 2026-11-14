@@ -187,8 +187,14 @@ def test_delivery_log_replay_allows_duplicate_send_without_row_lock(
     delivery_log_replay_service.replay_delivery_log(
         db_session, int(failed.id), destination_registry=registry
     )
+    # WP-E (E-051): a second live replay of an already replayed failure is refused unless the
+    # operator passes the explicit duplicate-delivery override; the source row is still not locked.
+    with pytest.raises(delivery_log_replay_service.ReplayAlreadyDeliveredError):
+        delivery_log_replay_service.replay_delivery_log(
+            db_session, int(failed.id), destination_registry=registry
+        )
     delivery_log_replay_service.replay_delivery_log(
-        db_session, int(failed.id), destination_registry=registry
+        db_session, int(failed.id), destination_registry=registry, allow_redelivery=True
     )
     db_session.commit()
     assert len(sender.calls) == 2
