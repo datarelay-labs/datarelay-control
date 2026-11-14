@@ -25,10 +25,15 @@ from app.runtime import health_service
 from app.runtime.health_schemas import HealthLevel, StreamHealthRow
 from app.runtime.preview_service import _load_source_config_for_connector, run_connector_auth_test
 from app.runtime.schemas import ConnectorAuthTestRequest
+from app.security.secrets import mask_secret_query_params_in_text
 from app.sources.models import Source
 from app.streams.models import Stream
 
 _VALID_AUTH_INTERVALS: frozenset[str] = frozenset({"disabled", "15m", "1h", "6h", "24h"})
+
+
+def _masked_last_auth_error(value: Any) -> Any:
+    return mask_secret_query_params_in_text(value) if isinstance(value, str) else value
 
 
 def read_operational_config(config: dict[str, Any] | None) -> dict[str, Any]:
@@ -45,7 +50,8 @@ def read_operational_config(config: dict[str, Any] | None) -> dict[str, Any]:
         "auth_test_path": op.get("auth_test_path") or None,
         "last_auth_check_at": op.get("last_auth_check_at"),
         "last_auth_check_status": status,
-        "last_auth_error": op.get("last_auth_error"),
+        # Rows written before E-096 may still carry a query-string credential in the stored probe message.
+        "last_auth_error": _masked_last_auth_error(op.get("last_auth_error")),
     }
 
 

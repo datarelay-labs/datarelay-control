@@ -40,6 +40,7 @@ from app.backup.router import router as backup_router
 from app.backfill.router import router as backfill_router
 from app.config import settings
 from app.production_security import ensure_production_security_settings, is_production_app_env
+from app.security.log_redaction import install_http_client_log_redaction
 from app.connectors.router import router as connectors_router
 from app.delivery.router import router as delivery_router
 from app.destinations.router import router as destinations_router
@@ -67,6 +68,7 @@ from app.governance_notifications.worker import GovernanceOutboxWorker
 from app.platform_admin.delivery_logs_index_probe import probe_delivery_logs_indexes
 
 logger = logging.getLogger(__name__)
+install_http_client_log_redaction()
 
 
 @asynccontextmanager

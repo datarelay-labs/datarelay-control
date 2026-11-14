@@ -1790,11 +1790,11 @@ class ConnectorAuthTestRequest(BaseModel):
     connector_id: int | None = Field(
         default=None,
         ge=1,
-        description="Saved connector Source row. For HTTP_API_POLLING, may be combined with inline_flat_source as a visible edit-form draft overlay.",
+        description="Saved connector Source row. May be combined with an inline_flat_source of the same connector type (HTTP_API_POLLING, DATABASE_QUERY, S3_OBJECT_POLLING, REMOTE_FILE_POLLING) as a visible edit-form draft overlay.",
     )
     inline_flat_source: dict[str, Any] | None = Field(
         default=None,
-        description="Flattened visible connector draft. Without connector_id it is an unsaved connector; with an HTTP_API_POLLING connector_id it overlays saved config while masked same-origin secrets remain server-resolved.",
+        description="Flattened visible connector draft. Without connector_id it is an unsaved connector; with a saved connector_id of the same type it overlays the saved config, and masked or blank secret fields are resolved server-side only while the destination (base URL / token and login URLs / proxy, host:port, endpoint) is unchanged.",
     )
     method: str = Field(default="GET", description="HTTP method for the auth probe request.")
     test_path: str | None = Field(

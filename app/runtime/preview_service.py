@@ -67,7 +67,16 @@ from app.connectors.session_login_http import SessionLoginHttpDebug
 from app.connectors.auth.normalize import normalize_connector_auth
 from app.connectors.auth.registry import apply_auth_to_http_request
 from app.runtime.errors import ProtectionApplicationError, PreviewSideEffectRequiredError, EnrichmentError, MappingError, ParserError, PreviewRequestError, SourceFetchError, SourceFetchError
-from app.security.secrets import MASKED_SECRET_SENTINEL, mask_http_headers, mask_secrets, mask_config_payload
+from app.security.secrets import (
+    MASKED_SECRET_SENTINEL,
+    is_secret_query_param_name,
+    is_sensitive_field_name,
+    mask_config_payload,
+    mask_http_headers,
+    mask_secrets,
+    normalize_query_param_names,
+    sanitize_secret_echo,
+)
 from app.connectors.auth_execute import (
     _vendor_jwt_validate_credentials,
     build_vendor_token_exchange_auth_headers,
@@ -573,6 +582,84 @@ _AUTH_TEST_SECRET_KEYS = frozenset(
         "api_key",
     }
 )
+# Other URLs of an HTTP connector that receive credentials (token exchange, session login, preflight).
+_AUTH_TEST_HTTP_CREDENTIAL_URL_KEYS = ("oauth2_token_url", "token_url", "login_url", "preflight_url")
+
+# Secret-bearing source fields whose literal values must never be echoed back by a connector test.
+_AUTH_TEST_ECHO_SECRET_KEYS = _AUTH_TEST_SECRET_KEYS | frozenset(
+    {
+        "password",
+        "secret_key",
+        "private_key",
+        "private_key_passphrase",
+        "remote_password",
+        "remote_private_key",
+        "remote_private_key_passphrase",
+        "db_password",
+    }
+)
+
+
+class _SecretEchoMask:
+    """Masks query-carried secrets in everything a connector / API test returns to the caller (E-096).
+
+    Masking is keyed on the query-parameter *name* (common secret names plus the connector's configured
+    ``api_key_name`` / ``access_token_query_name``), so it does not depend on the typed value matching the
+    saved one. Known secret literals (saved/typed secrets, the exchanged access token) are additionally
+    redacted as defence in depth.
+    """
+
+    def __init__(self) -> None:
+        self._names: set[str] = set()
+        self._literals: list[str] = []
+
+    def absorb_source_config(self, source_config: dict[str, Any] | None) -> _SecretEchoMask:
+        cfg = source_config if isinstance(source_config, dict) else {}
+        self.add_param_names(cfg.get("api_key_name"), cfg.get("access_token_query_name"))
+        for key in _AUTH_TEST_ECHO_SECRET_KEYS:
+            self.add_literal(cfg.get(key))
+        return self
+
+    def add_param_names(self, *names: Any) -> None:
+        self._names.update(normalize_query_param_names(names))
+
+    def add_literal(self, value: Any) -> None:
+        if isinstance(value, str) and value and value != _AUTH_TEST_MASK and value not in self._literals:
+            self._literals.append(value)
+
+    def sanitize(self, value: Any) -> Any:
+        return sanitize_secret_echo(value, param_names=frozenset(self._names), literals=tuple(self._literals))
+
+    def mask_params(self, params: Any) -> Any:
+        if not isinstance(params, dict):
+            return params
+        names = frozenset(self._names)
+        return {
+            k: (_AUTH_TEST_MASK if is_secret_query_param_name(str(k), names) and v not in (None, "") else v)
+            for k, v in params.items()
+        }
+
+
+def _mask_http_api_test_response(result: HttpApiTestResponse, mask: _SecretEchoMask) -> HttpApiTestResponse:
+    """Mask the request-echo fields of an HTTP API test result (response samples stay untouched)."""
+
+    updates: dict[str, Any] = {
+        "request": result.request.model_copy(update={"url": mask.sanitize(result.request.url)}),
+        "steps": [step.model_copy(update={"message": mask.sanitize(step.message)}) for step in result.steps],
+    }
+    if result.actual_request_sent is not None:
+        sent = result.actual_request_sent
+        updates["actual_request_sent"] = sent.model_copy(
+            update={
+                "url": mask.sanitize(sent.url),
+                "query_params": mask.mask_params(sent.query_params),
+            }
+        )
+    for field in ("message", "target_response_body", "hint"):
+        value = getattr(result, field)
+        if isinstance(value, str):
+            updates[field] = mask.sanitize(value)
+    return result.model_copy(update=updates)
 
 
 def _connector_auth_test_http_origin(value: Any) -> tuple[str, str, int] | None:
@@ -593,21 +680,227 @@ def _connector_auth_test_http_origin(value: Any) -> tuple[str, str, int] | None:
     return scheme, host, int(port or (443 if scheme == "https" else 80))
 
 
-def _overlay_connector_auth_test_draft(saved: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
-    """Overlay a visible HTTP edit draft without forwarding saved secrets to a new origin."""
+def _connector_auth_test_credential_url_destination(value: Any, base_origin: Any) -> Any:
+    """Where a credential-bearing URL field sends secrets: its own origin, or the base origin when relative."""
 
-    saved_origin = _connector_auth_test_http_origin(saved.get("base_url"))
-    draft_origin = _connector_auth_test_http_origin(draft.get("base_url"))
-    can_reuse_saved_secret = saved_origin is not None and saved_origin == draft_origin
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if "://" in raw:
+        return _connector_auth_test_http_origin(raw) or ("raw", raw.lower())
+    if raw.startswith("/"):
+        return base_origin
+    return ("raw", raw.lower())
+
+
+def _http_draft_keeps_saved_destinations(saved: dict[str, Any], draft: dict[str, Any]) -> bool:
+    """True only when every URL / proxy that would receive a reused saved secret is unchanged."""
+
+    effective = {**saved, **draft}
+    saved_base = _connector_auth_test_http_origin(saved.get("base_url"))
+    if saved_base is None or saved_base != _connector_auth_test_http_origin(effective.get("base_url")):
+        return False
+    for key in _AUTH_TEST_HTTP_CREDENTIAL_URL_KEYS:
+        if _connector_auth_test_credential_url_destination(
+            effective.get(key), saved_base
+        ) != _connector_auth_test_credential_url_destination(saved.get(key), saved_base):
+            return False
+
+    def _proxy(cfg: dict[str, Any]) -> str:
+        return str(cfg.get("http_proxy") or cfg.get("proxy_url") or "").strip().lower()
+
+    return _proxy(saved) == _proxy(effective)
+
+
+# Free-text / structured HTTP auth fields that routinely embed credentials in addition to the explicit secret
+# keys; like secrets they are inherited from the saved row only while every destination is unchanged.
+_AUTH_TEST_HTTP_CREDENTIAL_FIELDS = frozenset(
+    {
+        "access_token",
+        "token_body",
+        "token_custom_headers",
+        "login_body_template",
+        "login_body_raw",
+        "login_headers",
+        "preflight_headers",
+        "preflight_body_raw",
+    }
+)
+
+
+def _auth_test_is_blank_or_masked(value: Any) -> bool:
+    """Missing, null, blank and the masked placeholder are one state: "not supplied"."""
+
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() in ("", _AUTH_TEST_MASK)
+    if isinstance(value, (dict, list, tuple)):
+        return len(value) == 0
+    return False
+
+
+def _auth_test_empty_like(saved_value: Any) -> Any:
+    if isinstance(saved_value, dict):
+        return {}
+    if isinstance(saved_value, (list, tuple)):
+        return []
+    return ""
+
+
+def _auth_test_resolve_secret_fields(
+    out: dict[str, Any],
+    saved: dict[str, Any],
+    draft: dict[str, Any],
+    secret_keys: Any,
+    *,
+    keep_saved: bool,
+) -> None:
+    """Fail-closed secret resolution for every secret field of the saved row or the draft.
+
+    A non-blank, non-masked draft value is an explicit replacement and always wins. Otherwise (missing, null,
+    blank or masked) the saved value is inherited only when ``keep_saved`` (destination unchanged); in every
+    other case the field is cleared. Fields that exist only in the saved row are handled too, so a secret
+    the draft never mentions can never follow a changed destination.
+    """
+
+    for key in secret_keys:
+        if key not in saved and key not in draft:
+            continue
+        supplied = draft.get(key)
+        if not _auth_test_is_blank_or_masked(supplied):
+            out[key] = supplied
+            continue
+        previous = saved.get(key)
+        if keep_saved and not _auth_test_is_blank_or_masked(previous):
+            out[key] = previous
+        else:
+            out[key] = _auth_test_empty_like(previous)
+
+
+def _auth_test_header_is_sensitive(name: str) -> bool:
+    return mask_http_headers({str(name): "x"}).get(str(name)) != "x"
+
+
+def _auth_test_merge_headers(saved_headers: Any, draft_headers: Any, *, draft_supplied: bool, keep_saved: bool) -> dict[str, str]:
+    """Merge common headers: a masked sensitive value resolves from the saved row only for an unchanged destination."""
+
+    saved_map = {str(k): str(v) for k, v in dict(saved_headers or {}).items()}
+    if not draft_supplied:
+        return {k: v for k, v in saved_map.items() if keep_saved or not _auth_test_header_is_sensitive(k)}
+    out: dict[str, str] = {}
+    for key, value in dict(draft_headers or {}).items():
+        name = str(key)
+        if value is None or str(value).strip() in ("", _AUTH_TEST_MASK):
+            if _auth_test_header_is_sensitive(name):
+                if keep_saved and saved_map.get(name):
+                    out[name] = saved_map[name]
+                continue
+            out[name] = "" if value is None else str(value)
+            continue
+        out[name] = str(value)
+    return out
+
+
+def _overlay_connector_auth_test_draft(saved: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Overlay a visible HTTP edit draft without forwarding saved secrets to a new destination."""
+
+    keep_saved = _http_draft_keeps_saved_destinations(saved, draft)
+    secret_keys = (
+        set(_AUTH_TEST_SECRET_KEYS)
+        | set(_AUTH_TEST_HTTP_CREDENTIAL_FIELDS)
+        | {k for k in (*saved, *draft) if is_sensitive_field_name(str(k))}
+    )
+    header_keys = ("headers", "common_headers")
 
     out = dict(saved)
     for key, value in draft.items():
-        if key in _AUTH_TEST_SECRET_KEYS and value in (None, "", _AUTH_TEST_MASK):
-            if can_reuse_saved_secret and saved.get(key) not in (None, ""):
-                continue
-            out[key] = ""
+        if key in secret_keys or key in header_keys:
             continue
         out[key] = value
+    _auth_test_resolve_secret_fields(out, saved, draft, sorted(secret_keys), keep_saved=keep_saved)
+    for key in header_keys:
+        if key in saved or key in draft:
+            out[key] = _auth_test_merge_headers(
+                saved.get(key), draft.get(key), draft_supplied=key in draft, keep_saved=keep_saved
+            )
+    return out
+
+
+# Non-HTTP connector families: visible draft keys use the form's names; saved rows use canonical names.
+_AUTH_TEST_DRAFT_KEY_ALIASES: dict[str, dict[str, str]] = {
+    "DATABASE_QUERY": {"db_username": "username", "db_password": "password"},
+    "REMOTE_FILE_POLLING": {
+        "remote_username": "username",
+        "remote_password": "password",
+        "remote_file_protocol": "protocol",
+        "remote_private_key": "private_key",
+        "remote_private_key_passphrase": "private_key_passphrase",
+    },
+    "S3_OBJECT_POLLING": {},
+}
+# Blank / masked values of these fields mean "unchanged" and resolve from the saved row (same destination only).
+_AUTH_TEST_FAMILY_RESOLVED_KEYS: dict[str, frozenset[str]] = {
+    "DATABASE_QUERY": frozenset({"password"}),
+    "REMOTE_FILE_POLLING": frozenset({"password", "private_key", "private_key_passphrase", "known_hosts_text"}),
+    "S3_OBJECT_POLLING": frozenset({"secret_key", "access_key"}),
+}
+
+
+def _connector_auth_test_family(cfg: dict[str, Any]) -> str | None:
+    if _is_database_query_connector_auth_config(cfg):
+        return "DATABASE_QUERY"
+    if _is_remote_file_connector_auth_config(cfg):
+        return "REMOTE_FILE_POLLING"
+    if _is_s3_connector_auth_config(cfg):
+        return "S3_OBJECT_POLLING"
+    source_type = str(cfg.get("source_type") or "HTTP_API_POLLING").strip().upper()
+    if str(cfg.get("base_url") or "").strip() and source_type == "HTTP_API_POLLING":
+        return "HTTP_API_POLLING"
+    return None
+
+
+def _connector_auth_test_secret_destination(family: str, cfg: dict[str, Any]) -> Any:
+    """The network destination a saved secret of this family is sent to."""
+
+    if family == "S3_OBJECT_POLLING":
+        return _connector_auth_test_http_origin(cfg.get("endpoint_url")) or ("raw", str(cfg.get("endpoint_url") or "").lower())
+    default_port = 5432 if family == "DATABASE_QUERY" else 22
+    try:
+        port = int(cfg.get("port") or 0) or default_port
+    except (TypeError, ValueError):
+        port = -1
+    return (str(cfg.get("host") or "").strip().lower(), port)
+
+
+def _overlay_connector_auth_test_non_http_draft(family: str, saved: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Overlay a visible DATABASE_QUERY / S3 / REMOTE_FILE edit draft on the saved connector row (E-009).
+
+    Draft keys are mapped onto the saved row's canonical keys, so an edited value always replaces the saved
+    one. Fail closed: every secret field of the saved row (explicit per-family allow-list plus the secret-name
+    heuristic, so a new secret field is never silently inherited) is inherited only while the destination
+    (host+port or endpoint) is unchanged and the draft did not supply a non-blank, non-masked replacement.
+    Missing, null, blank and masked draft values are the same state.
+    """
+
+    aliases = _AUTH_TEST_DRAFT_KEY_ALIASES.get(family, {})
+    canonical: dict[str, Any] = {}
+    for key, value in draft.items():
+        canonical[aliases.get(key, key)] = value
+    effective_draft = {**saved, **{k: v for k, v in canonical.items() if v is not None}}
+    same_destination = _connector_auth_test_secret_destination(family, saved) == _connector_auth_test_secret_destination(
+        family, effective_draft
+    )
+    secret_keys = set(_AUTH_TEST_FAMILY_RESOLVED_KEYS.get(family, frozenset())) | {
+        k for k in (*saved, *canonical) if is_sensitive_field_name(str(k))
+    }
+
+    out = dict(saved)
+    for key, value in canonical.items():
+        if key in secret_keys or value is None:
+            continue
+        out[key] = value
+    _auth_test_resolve_secret_fields(out, saved, canonical, sorted(secret_keys), keep_saved=same_destination)
     return out
 
 
@@ -631,24 +924,20 @@ def _source_config_for_connector_auth_test(payload: ConnectorAuthTestRequest, db
     if "headers" not in inl and "common_headers" in inl:
         inl = {**inl, "headers": dict(inl.get("common_headers") or {})}
     if loaded is not None and inl:
-        loaded_is_http = (
-            bool(str(loaded.get("base_url") or "").strip())
-            and not _is_s3_connector_auth_config(loaded)
-            and not _is_database_query_connector_auth_config(loaded)
-            and not _is_remote_file_connector_auth_config(loaded)
-        )
-        draft_source_type = str(inl.get("source_type") or "HTTP_API_POLLING").strip().upper()
-        draft_is_http = bool(str(inl.get("base_url") or "").strip()) and draft_source_type == "HTTP_API_POLLING"
-        if not loaded_is_http or not draft_is_http:
+        loaded_family = _connector_auth_test_family(loaded)
+        draft_family = _connector_auth_test_family(inl)
+        if loaded_family is None or loaded_family != draft_family:
             raise PreviewRequestError(
                 400,
                 {
                     "ok": False,
                     "error_type": "inline_draft_overlay_not_supported",
-                    "message": "Saved connector draft overlays are supported only for HTTP API connectors.",
+                    "message": "A saved connector can only be tested with a draft of the same connector type.",
                 },
             )
-        return _overlay_connector_auth_test_draft(loaded, inl)
+        if loaded_family == "HTTP_API_POLLING":
+            return _overlay_connector_auth_test_draft(loaded, inl)
+        return _overlay_connector_auth_test_non_http_draft(loaded_family, loaded, inl)
     if loaded is not None:
         return loaded
     return inl
@@ -675,6 +964,7 @@ def _vendor_jwt_connector_auth_test(
     extra_headers: dict[str, str],
     query_params: dict[str, Any],
     json_body: Any | None,
+    echo_mask: _SecretEchoMask | None = None,
 ) -> ConnectorAuthTestResponse:
     """Auth probe for vendor_jwt_exchange: token request ignores common headers; final request merges them."""
 
@@ -836,6 +1126,8 @@ def _vendor_jwt_connector_auth_test(
 
             tdict = tjson if isinstance(tjson, dict) else {}
             access_token = vendor_access_token_from_response(tdict, auth)
+            if access_token and echo_mask is not None:
+                echo_mask.add_literal(str(access_token))
             if not access_token:
                 tb = json.dumps(mask_secrets(tdict), ensure_ascii=False)[:8000]
                 tb_bundle = {**tok_bundle, "token_response_body": tb, "token_response_body_masked": tb}
@@ -1014,9 +1306,25 @@ def _vendor_jwt_connector_auth_test(
 
 
 def run_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | None) -> ConnectorAuthTestResponse:
-    """Validate connector authentication with a user-defined HTTP probe (not limited to GET /)."""
+    """Validate connector authentication with a user-defined HTTP probe (not limited to GET /).
+
+    Every user-visible field is masked for query-carried secrets (E-096), whichever code path produced it.
+    """
 
     source_config = _source_config_for_connector_auth_test(payload, db)
+    echo_mask = _SecretEchoMask().absorb_source_config(source_config)
+    try:
+        result = _run_connector_auth_test(payload, source_config, echo_mask)
+    except PreviewRequestError as exc:
+        raise PreviewRequestError(exc.status_code, echo_mask.sanitize(exc.detail)) from exc
+    return ConnectorAuthTestResponse.model_validate(echo_mask.sanitize(result.model_dump()))
+
+
+def _run_connector_auth_test(
+    payload: ConnectorAuthTestRequest,
+    source_config: dict[str, Any],
+    echo_mask: _SecretEchoMask,
+) -> ConnectorAuthTestResponse:
 
     if _is_database_query_connector_auth_config(source_config):
         flat = {
@@ -1141,6 +1449,7 @@ def run_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | Non
             extra_headers=extra_headers,
             query_params=query_params,
             json_body=json_body,
+            echo_mask=echo_mask,
         )
 
     if auth_type == "SESSION_LOGIN":
@@ -1491,6 +1800,23 @@ def _session_not_acquired(lab: Any) -> bool:
 
 
 def run_http_api_test(payload: HttpApiTestRequest, db: Session | None = None, *, api_origin: str | None = None) -> HttpApiTestResponse:
+    """HTTP poll + JSON preview; request-echo fields and error details are masked for query-carried secrets (E-096)."""
+
+    echo_mask = _SecretEchoMask()
+    try:
+        result = _run_http_api_test(payload, db, api_origin=api_origin, echo_mask=echo_mask)
+    except PreviewRequestError as exc:
+        raise PreviewRequestError(exc.status_code, echo_mask.sanitize(exc.detail)) from exc
+    return _mask_http_api_test_response(result, echo_mask)
+
+
+def _run_http_api_test(
+    payload: HttpApiTestRequest,
+    db: Session | None,
+    *,
+    api_origin: str | None,
+    echo_mask: _SecretEchoMask,
+) -> HttpApiTestResponse:
     stream_config = dict(payload.stream_config or {})
 
     if payload.connector_id is not None:
@@ -1512,6 +1838,7 @@ def run_http_api_test(payload: HttpApiTestRequest, db: Session | None = None, *,
         source_config = loaded
     else:
         source_config = dict(payload.source_config or {})
+    echo_mask.absorb_source_config(source_config)
 
     if _is_s3_connector_auth_config(source_config):
         from app.sources.adapters.s3_object_polling import S3ObjectPollingAdapter
