@@ -114,8 +114,28 @@ async function fetchViaHttpApiTest(
   eventRootPath: string,
 ): Promise<MappingSourceSampleResult> {
   const sourceType = normalizeGdcStreamSourceType(cfg.source_type ?? stream.stream_type)
-  const res: HttpApiTestResponse = await runHttpApiTest(buildHttpTestPayload(stream, cfg, connectorId))
   const fetchedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
+  let res: HttpApiTestResponse
+  try {
+    res = await runHttpApiTest(buildHttpTestPayload(stream, cfg, connectorId))
+  } catch (err) {
+    // A failed sample fetch (unreachable source, rejected query, ...) must not block the editors
+    // that only use the sample as an optional preview input; surface it as an unavailable sample.
+    return {
+      ok: false,
+      sourceType,
+      rawPayload: null,
+      treeDocument: {},
+      extractedEvents: [],
+      unionSchema: null,
+      eventArrayPath,
+      eventRootPath,
+      sampleEventIndex: 0,
+      message: err instanceof Error ? err.message : String(err),
+      recordsLabel: '—',
+      fetchedAt,
+    }
+  }
 
   if (!res.ok) {
     return {

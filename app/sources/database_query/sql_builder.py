@@ -25,11 +25,21 @@ def build_wrapped_select(
     checkpoint_value: dict[str, Any] | None,
     replay_low: Any | None = None,
     replay_high: Any | None = None,
+    replay_column: str | None = None,
+    describe_only: bool = False,
 ) -> tuple[str, tuple | dict[str, Any] | None]:
-    """Return (sql, merged_params). LIMIT is inlined as a validated int; other binds preserved."""
+    """Return (sql, merged_params). LIMIT is inlined as a validated int; other binds preserved.
+
+    ``replay_column`` is the date/time column the backfill window (``replay_low``..``replay_high``)
+    filters. It is independent of the checkpoint (watermark) column, which is often an integer id.
+    Without it the window falls back to ``checkpoint_column`` (only valid when that is a date/time).
+
+    ``describe_only`` emits ``LIMIT 0`` (result metadata only): PostgreSQL plans the statement but does
+    not execute the user query, so column discovery never pays for a slow first row.
+    """
 
     mode = str(checkpoint_mode or "NONE").strip().upper()
-    lim = max(1, int(max_rows))
+    lim = 0 if describe_only else max(1, int(max_rows))
 
     if db_kind != "POSTGRESQL":
         raise SourceFetchError(f"unsupported db_kind for SQL builder: {db_kind}")
@@ -43,11 +53,16 @@ def build_wrapped_select(
     use_replay_range = replay_low is not None and replay_high is not None
 
     if use_replay_range:
-        if mode not in {"SINGLE_COLUMN", "COMPOSITE_ORDER"}:
-            raise SourceFetchError("DATABASE_QUERY replay requires checkpoint_mode SINGLE_COLUMN or COMPOSITE_ORDER")
-        if not checkpoint_column:
-            raise SourceFetchError("checkpoint_column is required for DATABASE_QUERY replay window")
-        col = validate_sql_identifier(checkpoint_column, field="checkpoint_column")
+        if replay_column:
+            col = validate_sql_identifier(replay_column, field="replay_time_column")
+        else:
+            if mode not in {"SINGLE_COLUMN", "COMPOSITE_ORDER"}:
+                raise SourceFetchError(
+                    "DATABASE_QUERY replay requires replay_time_column or checkpoint_mode SINGLE_COLUMN/COMPOSITE_ORDER"
+                )
+            if not checkpoint_column:
+                raise SourceFetchError("checkpoint_column is required for DATABASE_QUERY replay window")
+            col = validate_sql_identifier(checkpoint_column, field="checkpoint_column")
         wc = q_ident(col)
         if isinstance(query_params, dict):
             where_parts.append(f"{inner_alias}.{wc} >= %(gdc_rl_low)s")
