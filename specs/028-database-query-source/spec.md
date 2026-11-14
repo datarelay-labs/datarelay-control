@@ -58,6 +58,7 @@ Connectivity probes (future implementation) must be **non-destructive** (e.g. `S
 | `checkpoint_mode` | enum | yes | Defines how incremental state is interpreted. Initial set: `NONE` (full read each run, subject to `max_rows_per_run`), `SINGLE_COLUMN` (monotonic watermark on `checkpoint_column`), `COMPOSITE_ORDER` (watermark + deterministic tie-break using `checkpoint_order_column`). |
 | `checkpoint_column` | string | conditional | Required when `checkpoint_mode` is `SINGLE_COLUMN` or `COMPOSITE_ORDER`. Must refer to a single column in the SELECT list (or an alias exposed in the result). |
 | `checkpoint_order_column` | string | conditional | Required when `checkpoint_mode` is `COMPOSITE_ORDER`. Used when watermark ties occur. |
+| `replay_time_column` | string | no | Date/time column of the query result that a backfill/replay time window filters. When omitted the platform uses `checkpoint_column` if it is a date/time, otherwise the single date/time column of the result; if none or several exist the backfill fails with an actionable error instead of comparing an integer watermark to a timestamp. |
 
 Optional future extensions (e.g. primary-key pagination mode) must not contradict **checkpoint-after-delivery**.
 
