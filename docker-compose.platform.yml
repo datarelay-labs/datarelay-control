@@ -119,7 +119,7 @@ services:
       REQUIRE_AUTH: "false"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       GDC_TRUST_PROXY_HEADERS: "true"
-      GDC_PROXY_FORWARD_TRUSTED_HOSTS: "*"
+      GDC_PROXY_FORWARD_TRUSTED_HOSTS: "${GDC_PROXY_FORWARD_TRUSTED_HOSTS:-127.0.0.1}"
       GDC_TLS_CERT_PATH: /var/gdc/tls/server.crt
       GDC_TLS_KEY_PATH: /var/gdc/tls/server.key
       GDC_NGINX_TLS_CERT_CONTAINER_PATH: /var/gdc/tls/server.crt
