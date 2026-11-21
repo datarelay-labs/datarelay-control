@@ -66,4 +66,50 @@ describe('TemplateUseModal', () => {
     expect(onCreated).toHaveBeenCalledWith('/streams/3/runtime')
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('submits a scoped key with a template-supplied token path and no user ID', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const onCreated = vi.fn()
+    vi.mocked(gdcTemplates.instantiateTemplate).mockResolvedValue({
+      template_id: 'stellar_cyber_scoped_cases_api',
+      connector_id: 11,
+      source_id: 12,
+      stream_id: 13,
+      mapping_id: 14,
+      enrichment_id: 15,
+      checkpoint_id: 16,
+      route_id: null,
+      redirect_path: '/streams/13/runtime',
+    })
+
+    render(
+      <TemplateUseModal
+        open
+        template={{ ...bearerTemplate, template_id: 'stellar_cyber_scoped_cases_api', name: 'Stellar Cyber Cases', auth_type: 'jwt_refresh_token' }}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    )
+
+    await user.type(screen.getByLabelText('Host / base URL', { selector: 'input' }), 'https://dp.example.invalid')
+    const keyInput = screen.getByLabelText('Scoped API key / Refresh token', { selector: 'input' })
+    expect(keyInput).toHaveAttribute('type', 'password')
+    expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
+    await user.type(keyInput, 'fixture-scoped-key')
+    await user.click(screen.getByRole('button', { name: /Create scaffolding/i }))
+
+    await waitFor(() => {
+      expect(gdcTemplates.instantiateTemplate).toHaveBeenCalledWith(
+        'stellar_cyber_scoped_cases_api',
+        expect.objectContaining({
+          host: 'https://dp.example.invalid',
+          credentials: { refresh_token: 'fixture-scoped-key' },
+        }),
+      )
+    })
+    expect(onCreated).toHaveBeenCalledWith('/streams/13/runtime')
+    expect(onClose).toHaveBeenCalled()
+  })
+
 })
