@@ -211,6 +211,34 @@ def test_instantiate_stellar_vendor_jwt(client: TestClient, db_session: Session)
     assert src.auth_json.get("auth_type") == "vendor_jwt_exchange"
 
 
+def test_instantiate_stellar_scoped_cases_requires_only_scoped_key(
+    client: TestClient, db_session: Session
+) -> None:
+    res = client.post(
+        "/api/v1/templates/stellar_cyber_scoped_cases_api/instantiate",
+        json={
+            "connector_name": "Stellar scoped cases fixture",
+            "host": "https://dp.example.invalid",
+            "credentials": {"refresh_token": "fixture-scoped-key"},
+        },
+    )
+    assert res.status_code == 201, res.text
+    out = res.json()
+    src = db_session.get(Source, int(out["source_id"]))
+    stream = db_session.get(Stream, int(out["stream_id"]))
+    mapping = db_session.get(Mapping, int(out["mapping_id"]))
+    assert src is not None and stream is not None and mapping is not None
+    assert src.auth_json["auth_type"] == "jwt_refresh_token"
+    assert src.auth_json["refresh_token"] == "fixture-scoped-key"
+    assert src.auth_json["token_path"] == "/connect/api/v1/access_token"
+    assert src.auth_json["refresh_token_header_prefix"] == "Bearer"
+    assert src.auth_json["access_token_json_path"] == "$.access_token"
+    assert stream.enabled is False
+    assert stream.config_json["method"] == "GET"
+    assert mapping.event_array_path == "$.data.cases"
+    assert out["route_id"] is None
+
+
 def test_instantiate_okta_oauth2(client: TestClient, db_session: Session) -> None:
     res = client.post(
         "/api/v1/templates/okta_system_log/instantiate",
