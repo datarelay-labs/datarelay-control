@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyIncrementalRequestTemplate,
+  reconcileIncrementalQueryParamDraft,
   incrementalCursorKindFromFieldType,
   unsupportedCheckpointPlaceholderNames,
   availableIncrementalPatterns,
@@ -659,6 +660,34 @@ describe('countRecordsNewerThanTestCheckpoint', () => {
     const numTest = calculateIncrementalRequestTestCheckpoint([10, 20], 'OFFSET')
     if (numTest.kind !== 'ok') throw new Error('expected ok checkpoint')
     expect(countRecordsNewerThanTestCheckpoint([5, 10, 15], numTest)).toBe(1)
+  })
+})
+
+describe('reconcileIncrementalQueryParamDraft E-057', () => {
+  it('updates the matching static draft limit when Request Configuration changes 20 to 25', () => {
+    const before = { limit: '20', tenant: 'acme' }
+    const after = { limit: '25', tenant: 'acme' }
+    const draft = 'after={{checkpoint.value}}\nlimit=20\ntenant=acme'
+    const updated = reconcileIncrementalQueryParamDraft(before, after, 'query_params', draft)
+    expect(updated).toBe('after={{checkpoint.value}}\nlimit=25\ntenant=acme')
+    expect(applyIncrementalRequestTemplate({ method: 'GET', params: after }, 'query_params', updated).params.limit).toBe('25')
+  })
+
+  it('does not clobber an explicit advanced override or checkpoint variable', () => {
+    expect(reconcileIncrementalQueryParamDraft(
+      { limit: '20' }, { limit: '25' }, 'query_params',
+      'after={{checkpoint.value}}\nlimit=50',
+    )).toBe('after={{checkpoint.value}}\nlimit=50')
+    expect(reconcileIncrementalQueryParamDraft(
+      { after: '{{checkpoint.value}}' }, { after: '25' }, 'query_params',
+      'after={{checkpoint.cursor}}',
+    )).toBe('after={{checkpoint.cursor}}')
+  })
+
+  it('does not rewrite non-query patterns or unrelated draft lines', () => {
+    const draft = '{"limit":20,"cursor":"{{checkpoint.value}}"}'
+    expect(reconcileIncrementalQueryParamDraft({ limit: '20' }, { limit: '25' }, 'json_body', draft)).toBe(draft)
+    expect(reconcileIncrementalQueryParamDraft({ limit: '20' }, { tenant: 'acme' }, 'query_params', 'limit=20')).toBe('limit=20')
   })
 })
 

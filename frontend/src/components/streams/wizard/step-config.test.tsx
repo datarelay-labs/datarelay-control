@@ -40,6 +40,53 @@ describe('StepConfig', () => {
   // C7: on the old code the Edit page Request tab analyzed only the base request (limit=20, no body)
   // of a stream whose saved request is incremental, showed "Body: none" and raised a false
   // CHECKPOINT_VARIABLE_MISSING / FULL_FETCH_RISK warning.
+  it('E-057 synchronizes a saved incremental query limit on operator edit', async () => {
+    const user = userEvent.setup()
+    const patches: Array<Partial<WizardConfigState>> = []
+    const starting = buildInitialState()
+    const initial: WizardState = {
+      ...starting,
+      stream: {
+        ...starting.stream,
+        params: [{ id: 'limit-row', key: 'limit', value: '20' }],
+        incrementalRequestPattern: 'query_params',
+        incrementalRequestDraft: 'after={{checkpoint.value}}\nlimit=20',
+      },
+    }
+    function Editable() {
+      const [state, setState] = useState(initial)
+      return <StepConfig state={state} onChange={(patch) => {
+        patches.push(patch)
+        setState((prev) => ({ ...prev, stream: { ...prev.stream, ...patch } }))
+      }} />
+    }
+    const { container } = render(<Editable />)
+    const valueField = container.querySelector<HTMLInputElement>('input[placeholder="value"]')
+    expect(valueField).not.toBeNull()
+    await user.clear(valueField!)
+    await user.type(valueField!, '25')
+    expect(valueField).toHaveValue('25')
+    expect(patches.some((patch) => patch.incrementalRequestDraft?.includes('limit=25'))).toBe(true)
+    expect(screen.getByTestId('wizard-connect-incremental-request')).toHaveTextContent('limit=25')
+    expect(screen.queryByText(/Incremental request overrides Request Configuration/)).not.toBeInTheDocument()
+  })
+
+  it('E-057 exposes a deliberately different advanced override instead of silently claiming a base value', () => {
+    const starting = buildInitialState()
+    const state: WizardState = {
+      ...starting,
+      stream: {
+        ...starting.stream,
+        params: [{ id: 'limit-row', key: 'limit', value: '25' }],
+        incrementalRequestPattern: 'query_params',
+        incrementalRequestDraft: 'after={{checkpoint.value}}\nlimit=50',
+      },
+    }
+    render(<StepConfig state={state} onChange={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Incremental request overrides Request Configuration for limit.')
+    expect(screen.getByRole('alert')).toHaveTextContent('scheduled polling will use the template values')
+  })
+
   describe('saved incremental request (C7)', () => {
     function incrementalState(pattern: WizardConfigState['incrementalRequestPattern'], draft: string): WizardState {
       const state = buildInitialState()
