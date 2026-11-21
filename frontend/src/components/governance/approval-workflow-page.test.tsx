@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernanceApprovals from '../../api/gdcGovernanceApprovals'
+import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
 import { ApprovalWorkflowPage } from './approval-workflow-page'
 
@@ -77,6 +78,22 @@ const draftDetail: gdcGovernanceApprovals.GovernanceApprovalDetailResponse = {
   history: [],
 }
 
+vi.mock('../../api/gdcGovernancePolicies', () => ({
+  createGovernancePolicy: vi.fn(),
+  fetchPolicyAssignments: vi.fn(async () => ({ policy_id: 15, assignments: [] })),
+  updatePolicyAssignments: vi.fn(async () => ({ policy_id: 15, assignments: [] })),
+  fetchPolicyPreview: vi.fn(async () => null),
+  previewPolicyJson: vi.fn(async () => null),
+  previewPolicyImpact: vi.fn(async () => ({
+    window: '24h', total_events: 0, matched_events: 0, actions: {},
+    streams: [], delta: { matched_events_change: null }, data_available: false,
+  })),
+}))
+
+vi.mock('../../api/gdcStreams', () => ({
+  fetchStreamsList: vi.fn(async () => []),
+}))
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -90,6 +107,52 @@ describe('ApprovalWorkflowPage', () => {
     clearTestSession()
     persistTestSession('GOVERNANCE_OPERATOR')
     vi.restoreAllMocks()
+  })
+
+  it('E-069 offers policy draft creation in OSS mode and refreshes the approval queue on save', async () => {
+    vi.stubEnv('VITE_OSS_RELEASE_MODE', 'true')
+    const user = userEvent.setup()
+    const queue = vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
+      window: '24h', total: 0, approvals: [],
+    })
+    const created = vi.mocked(gdcGovernancePolicies.createGovernancePolicy).mockResolvedValue({
+      policy: {
+        id: 15, name: 'PII Alert', description: null, category: 'DATA_PROTECTION',
+        status: 'DRAFT', version: 1, assigned_stream_count: 0, assigned_stream_ids: [],
+        policy_json: { conditions: [{ field: 'classification', operator: 'equals', value: 'RESTRICTED' }],
+          actions: [{ type: 'quarantine' }] },
+        created_at: '2026-11-22T00:00:00Z', updated_at: '2026-11-22T00:00:00Z',
+      },
+    })
+    try {
+      renderPage()
+      await screen.findByTestId('approval-empty-state')
+      await user.click(screen.getByTestId('approval-create-draft'))
+      expect(await screen.findByTestId('policy-editor-drawer')).toBeInTheDocument()
+      await user.type(screen.getByTestId('policy-editor-name'), 'PII Alert')
+      await user.click(screen.getByTestId('policy-editor-save'))
+      await waitFor(() => {
+        expect(created).toHaveBeenCalledWith(expect.objectContaining({
+          name: 'PII Alert',
+          category: 'DATA_PROTECTION',
+        }))
+      })
+      expect(await screen.findByTestId('approval-draft-saved')).toHaveTextContent('no policy has been activated')
+      expect(queue).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('E-069 never offers policy authoring to read-only approval roles', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
+      window: '24h', total: 0, approvals: [],
+    })
+    renderPage()
+    await screen.findByTestId('approval-empty-state')
+    expect(screen.queryByTestId('approval-create-draft')).not.toBeInTheDocument()
+    expect(screen.getByText(/Ask a Governance Operator to create and submit/i)).toBeInTheDocument()
   })
 
   it('renders approval queue table', async () => {
