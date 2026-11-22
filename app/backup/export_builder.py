@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.backup.export_validation import build_export_integrity_report
+from app.backup.export_validation import (
+    build_export_integrity_report,
+    redact_known_secret_literals,
+)
 from app.backup.schemas import ExportKind
 from app.checkpoints.models import Checkpoint
 from app.connectors.models import Connector
@@ -22,7 +26,9 @@ from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.security.secrets import (
     collect_secret_literals,
+    is_template_placeholder,
     mask_config_payload,
+    mask_embedded_body_fields,
     mask_http_headers,
     mask_secrets_and_pem,
     mask_source_auth_json,
@@ -39,6 +45,17 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
+_MEDIA_TYPE_RE = re.compile(r"[A-Za-z][A-Za-z0-9.+\-]*/[A-Za-z0-9.+\-*]+(?:\s*;.*)?")
+
+
+class ExportNotMaskedError(RuntimeError):
+    """An export still carried a secret after masking; the file must not be handed out."""
+
+    def __init__(self, issues: list[str]) -> None:
+        super().__init__(f"export refused: {len(issues)} secret-masking issue(s)")
+        self.issues = list(issues)
+
+
 def _connector_dict(c: Connector) -> dict[str, Any]:
     return {
         "id": c.id,
@@ -52,7 +69,7 @@ def _connector_dict(c: Connector) -> dict[str, Any]:
 
 
 def _mask_source_auth_json(auth: dict[str, Any], source_type: str | None = None) -> dict[str, Any]:
-    base = mask_source_auth_json(source_type, dict(auth or {}))
+    base = mask_embedded_body_fields(mask_source_auth_json(source_type, dict(auth or {})))
     ph = base.get("preflight_headers")
     if isinstance(ph, dict):
         try:
@@ -68,7 +85,7 @@ def _source_dict(s: Source) -> dict[str, Any]:
         "id": s.id,
         "connector_id": s.connector_id,
         "source_type": s.source_type,
-        "config_json": mask_source_config_json(s.source_type, dict(s.config_json or {})),
+        "config_json": mask_embedded_body_fields(mask_source_config_json(s.source_type, dict(s.config_json or {}))),
         "auth_json": auth,
         "enabled": s.enabled,
         "created_at": _iso(s.created_at),
@@ -83,7 +100,7 @@ def _stream_dict(st: Stream) -> dict[str, Any]:
         "source_id": st.source_id,
         "name": st.name,
         "stream_type": st.stream_type,
-        "config_json": mask_config_payload(dict(st.config_json or {})),
+        "config_json": mask_embedded_body_fields(mask_config_payload(dict(st.config_json or {}))),
         "polling_interval": st.polling_interval,
         "enabled": st.enabled,
         "status": st.status,
@@ -110,7 +127,7 @@ def _enrichment_dict(e: Enrichment) -> dict[str, Any]:
     return {
         "id": e.id,
         "stream_id": e.stream_id,
-        "enrichment_json": dict(e.enrichment_json or {}),
+        "enrichment_json": mask_secrets_and_pem(dict(e.enrichment_json or {})),
         "override_policy": e.override_policy,
         "enabled": e.enabled,
         "created_at": _iso(e.created_at),
@@ -282,12 +299,36 @@ def _stored_secret_literals(db: Session, payload: dict[str, Any]) -> list[str]:
             literals.extend(collect_secret_literals(cfg))
             headers = cfg.get("headers")
             if isinstance(headers, dict):
-                literals.extend(str(v) for v in headers.values() if isinstance(v, str) and v.strip())
+                literals.extend(
+                    str(v)
+                    for v in headers.values()
+                    if isinstance(v, str) and v.strip() and not _is_benign_header_value(v)
+                )
     return literals
 
 
-def _integrity(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
-    return build_export_integrity_report(payload, known_secret_literals=_stored_secret_literals(db, payload))
+def _is_benign_header_value(value: str) -> bool:
+    """Media types / placeholders are not credentials (destination headers are all masked, but their values
+    such as ``application/json`` must not be hunted by value across the rest of the bundle)."""
+
+    text = value.strip()
+    return bool(_MEDIA_TYPE_RE.fullmatch(text)) or is_template_placeholder(text)
+
+
+def _finalize_integrity(db: Session, payload: dict[str, Any], *, strict_masking: bool) -> None:
+    """Redact surviving stored secret values, attach ``export_integrity`` and refuse an unmasked export.
+
+    ``secrets_masked`` is true only when key-name masking, the value scan and the final re-scan agree.
+    ``masked_field_count`` / ``value_scan_redactions`` state what was masked (paths only, never values).
+    """
+
+    literals = _stored_secret_literals(db, payload)
+    redactions = redact_known_secret_literals(payload, literals)
+    report = build_export_integrity_report(payload, known_secret_literals=literals)
+    report["value_scan_redactions"] = list(redactions)
+    payload["export_integrity"] = report
+    if strict_masking and not report["secrets_masked"]:
+        raise ExportNotMaskedError([m for m in report["issues"] if "mask" in m])
 
 
 def _base_bundle(*, export_kind: ExportKind, options: dict[str, Any]) -> dict[str, Any]:
@@ -313,6 +354,7 @@ def build_workspace_export(
     *,
     include_checkpoints: bool,
     include_destinations: bool,
+    strict_masking: bool = True,
 ) -> dict[str, Any]:
     payload = _base_bundle(
         export_kind="workspace",
@@ -329,7 +371,7 @@ def build_workspace_export(
     payload["routes"] = _route_rows(db, routes)
     if include_checkpoints:
         payload["checkpoints"] = [_checkpoint_dict(r) for r in db.query(Checkpoint).order_by(Checkpoint.id.asc()).all()]
-    payload["export_integrity"] = _integrity(db, payload)
+    _finalize_integrity(db, payload, strict_masking=strict_masking)
     return payload
 
 
@@ -341,6 +383,7 @@ def build_connector_export(
     include_routes: bool,
     include_checkpoints: bool,
     include_destinations: bool,
+    strict_masking: bool = True,
 ) -> dict[str, Any]:
     c = db.get(Connector, connector_id)
     if c is None:
@@ -359,7 +402,7 @@ def build_connector_export(
     sources = db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).all()
     payload["sources"] = [_source_dict(s) for s in sources]
     if not include_streams:
-        payload["export_integrity"] = _integrity(db, payload)
+        _finalize_integrity(db, payload, strict_masking=strict_masking)
         return payload
     streams = db.query(Stream).filter(Stream.connector_id == connector_id).order_by(Stream.id.asc()).all()
     stream_ids = [int(s.id) for s in streams]
@@ -388,7 +431,7 @@ def build_connector_export(
                         db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
                     )
                     payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = _integrity(db, payload)
+    _finalize_integrity(db, payload, strict_masking=strict_masking)
     return payload
 
 
@@ -399,6 +442,7 @@ def build_stream_export(
     include_routes: bool,
     include_checkpoints: bool,
     include_destinations: bool,
+    strict_masking: bool = True,
 ) -> dict[str, Any]:
     st = db.get(Stream, stream_id)
     if st is None:
@@ -436,7 +480,7 @@ def build_stream_export(
             dest_ids = {int(r.destination_id) for r in routes}
             dest_rows = db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
             payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = _integrity(db, payload)
+    _finalize_integrity(db, payload, strict_masking=strict_masking)
     return payload
 
 

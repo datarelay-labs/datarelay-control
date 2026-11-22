@@ -10,6 +10,8 @@ ExportKind = Literal["workspace", "connector", "stream"]
 # Phase 1 contract (specs/015): additive + clone only. full_restore is retired.
 ImportMode = Literal["additive", "clone"]
 PreviewClassification = Literal["safe_create", "overwrite_candidate", "blocked"]
+# E-124: explicit choice when an imported connector/destination name already exists.
+NameConflictChoice = Literal["skip", "rename"]
 
 
 class ConnectorExportQuery(BaseModel):
@@ -84,6 +86,16 @@ class ImportClassificationSummary(BaseModel):
     blocked: int = 0
 
 
+class ImportNameConflict(BaseModel):
+    """An imported connector/destination whose final display name already exists (E-124)."""
+
+    entity_type: Literal["connector", "destination"]
+    name: str
+    export_id: int | None = None
+    existing_ids: list[int] = Field(default_factory=list)
+    message: str = ""
+
+
 class ImportPreviewFinding(BaseModel):
     classification: PreviewClassification
     entity_type: str
@@ -101,6 +113,14 @@ class ImportPreviewResponse(BaseModel):
     unsupported_items: list[str] = Field(default_factory=list)
     findings: list[ImportPreviewFinding] = Field(default_factory=list)
     classification_summary: ImportClassificationSummary = Field(default_factory=ImportClassificationSummary)
+    name_conflicts: list[ImportNameConflict] = Field(
+        default_factory=list,
+        description="Connectors/destinations whose name already exists; apply requires on_name_conflict.",
+    )
+    requires_name_conflict_choice: bool = Field(
+        default=False, description="True when apply needs on_name_conflict because name_conflicts is not empty."
+    )
+    name_conflict_choices: list[str] = Field(default_factory=lambda: ["skip", "rename"])
     dry_run: bool = Field(default=True, description="Echo of the request dry_run flag.")
     preview_token: str = Field(
         description="SHA256 of canonical bundle JSON and mode; resend on apply for double confirmation.",
@@ -131,6 +151,14 @@ class ImportApplyRequest(BaseModel):
         ),
     )
     clone_name_suffix: str = Field(default=" (copy)", max_length=64, description="Appended to connector/stream names when mode=clone.")
+    on_name_conflict: NameConflictChoice | None = Field(
+        default=None,
+        description=(
+            "Required when the preview lists name_conflicts. skip: do not create connectors/destinations whose "
+            "name already exists (and nothing that depends on them). rename: create them under a new unique "
+            "name ('<name> (2)'). Without it the apply is refused and nothing is written."
+        ),
+    )
 
 
 class ImportApplyEntityIds(BaseModel):
@@ -156,9 +184,26 @@ class ImportSecretReentry(BaseModel):
     edit_path: str = ""
 
 
+class ImportSkippedEntity(BaseModel):
+    entity_type: Literal["connector", "destination", "route"]
+    name: str
+    export_id: int | None = None
+    reason: Literal["NAME_EXISTS", "DESTINATION_SKIPPED"]
+    existing_ids: list[int] = Field(default_factory=list)
+
+
+class ImportRenamedEntity(BaseModel):
+    entity_type: Literal["connector", "destination"]
+    name: str
+    new_name: str
+    entity_id: int
+
+
 class ImportApplyResponse(BaseModel):
     ok: bool
     created: ImportApplyEntityIds
+    skipped: list[ImportSkippedEntity] = Field(default_factory=list)
+    renamed: list[ImportRenamedEntity] = Field(default_factory=list)
     secrets_to_reenter: list[ImportSecretReentry] = Field(default_factory=list)
     redirect_path: str | None = None
     idempotency_key: str | None = Field(

@@ -9,6 +9,7 @@ import {
   type CurlImportDraft,
   type ImportApplyResult,
   type ImportMode,
+  type ImportNameConflictChoice,
   type ImportPreviewResult,
 } from '../../api/gdcBackup'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
@@ -39,7 +40,13 @@ function describeImportCounts(res: ImportApplyResult): string {
     `${c.stream_ids.length} stream${c.stream_ids.length === 1 ? '' : 's'}`,
     `${c.destination_ids.length} destination${c.destination_ids.length === 1 ? '' : 's'}`,
   ]
-  return `${parts.join(', ')} created`
+  const skipped = res.skipped ?? []
+  const renamed = res.renamed ?? []
+  const extra = [
+    skipped.length ? `${skipped.length} skipped (already exist or depend on a skipped destination)` : '',
+    renamed.length ? `${renamed.length} created under a new name` : '',
+  ].filter(Boolean)
+  return `${parts.join(', ')} created${extra.length ? `; ${extra.join('; ')}` : ''}`
 }
 
 const SECTION_STEP = 'text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted'
@@ -65,16 +72,34 @@ export function OperationsBackupPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [pageInfo, setPageInfo] = useState<string | null>(null)
   const [applyResult, setApplyResult] = useState<ImportApplyResult | null>(null)
+  // E-124: apply needs an explicit choice when a connector/destination name already exists; skip never duplicates.
+  const [nameConflictChoice, setNameConflictChoice] = useState<ImportNameConflictChoice>('skip')
   const applyIdempotencyKeyRef = useRef<string | null>(null)
   const modeHelp = MODE_HELP[importMode]
+  const nameConflicts = preview?.name_conflicts ?? []
 
   const onWorkspaceDownload = useCallback(async () => {
     setPageError(null)
+    setPageInfo(null)
     setWsBusy(true)
     try {
       const url = buildWorkspaceExportPath({ include_checkpoints: wsCkpt, include_destinations: wsDest })
-      await downloadBackupUrl(url, 'gdc-workspace-export.json')
-      setPageInfo('Workspace snapshot downloaded.')
+      const summary = await downloadBackupUrl(url, 'gdc-workspace-export.json')
+      if (summary?.secretsMasked === false) {
+        // The server refuses such exports; if a file ever reports this, say so instead of claiming masking.
+        setPageError(
+          'The downloaded file reports that some secrets are NOT masked (export_integrity.secrets_masked is false). ' +
+            'Do not share or store it; delete it and contact an administrator.',
+        )
+      } else if (summary?.secretsMasked === true) {
+        const n = summary.maskedFieldCount
+        setPageInfo(
+          `Workspace snapshot downloaded. Secrets were masked${typeof n === 'number' ? ` (${n} field${n === 1 ? '' : 's'})` : ''}; ` +
+            're-enter them after importing.',
+        )
+      } else {
+        setPageInfo('Workspace snapshot downloaded. Its masking report could not be read; review the file before sharing it.')
+      }
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -108,6 +133,7 @@ export function OperationsBackupPage() {
     try {
       const res = await postImportPreview(parsedBundle.bundle, importMode)
       setPreview(res)
+      setNameConflictChoice('skip')
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -147,6 +173,7 @@ export function OperationsBackupPage() {
       const res = await postImportApply(parsedBundle.bundle, importMode, preview.preview_token, {
         confirm: true,
         idempotency_key: applyIdempotencyKeyRef.current,
+        ...(nameConflicts.length ? { on_name_conflict: nameConflictChoice } : {}),
       })
       applyIdempotencyKeyRef.current = null
       setApplyDialogOpen(false)
@@ -174,7 +201,7 @@ export function OperationsBackupPage() {
     } finally {
       setApplyBusy(false)
     }
-  }, [canApplyImport, confirmApply, importMode, jsonText, navigate, preview])
+  }, [canApplyImport, confirmApply, importMode, jsonText, nameConflictChoice, nameConflicts.length, navigate, preview])
 
   const openApplyDialog = useCallback(() => {
     if (!canApplyImport) return
@@ -213,8 +240,10 @@ export function OperationsBackupPage() {
         >
           <p className="font-semibold">JSON export/import is additive or clone only — not database disaster recovery.</p>
           <p className="mt-1 leading-relaxed opacity-90">
-            Secrets are masked in exports; re-enter credentials when required. PostgreSQL backup/restore remains the
-            database recovery path and is intentionally separate from this workspace.
+            Secrets are never written to an export: credentials, tokens and free-text request bodies that contain them are
+            replaced by ******** and the file reports how many fields were masked (export_integrity). Re-enter them after
+            importing. PostgreSQL backup/restore remains the database recovery path and is intentionally separate from
+            this workspace.
           </p>
         </div>
       </header>
@@ -452,6 +481,42 @@ export function OperationsBackupPage() {
                   </div>
                 ) : null}
 
+                {nameConflicts.length ? (
+                  <div
+                    className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-900/50 dark:bg-amber-950/30"
+                    data-testid="backup-name-conflicts"
+                  >
+                    <p className="flex items-center gap-1 text-xs font-semibold text-amber-950 dark:text-amber-100">
+                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                      Name conflicts ({nameConflicts.length})
+                    </p>
+                    <p className="text-xs text-amber-950 dark:text-amber-50">
+                      These names already exist. Nothing is created twice silently: choose what to do with them before
+                      applying.
+                    </p>
+                    <ul className="list-inside list-disc space-y-1 text-xs text-amber-950 dark:text-amber-50">
+                      {nameConflicts.map((c) => (
+                        <li key={`${c.entity_type}-${c.export_id}-${c.name}`}>
+                          {c.entity_type === 'connector' ? 'Connector' : 'Destination'} <strong>{c.name}</strong> already
+                          exists (id {c.existing_ids.join(', ')})
+                        </li>
+                      ))}
+                    </ul>
+                    <label className="flex flex-wrap items-center gap-2 text-sm text-slate-800 dark:text-slate-200">
+                      <span>When a name already exists</span>
+                      <select
+                        aria-label="When a name already exists"
+                        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                        value={nameConflictChoice}
+                        onChange={(e) => setNameConflictChoice(e.target.value as ImportNameConflictChoice)}
+                      >
+                        <option value="skip">Skip it (do not create it or anything that depends on it)</option>
+                        <option value="rename">Create it under a new unique name (&quot;name (2)&quot;)</option>
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
+
                 <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-gdc-border">
                   <p className={SECTION_STEP}>Explicit apply</p>
                   <label className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-200">
@@ -542,7 +607,11 @@ export function OperationsBackupPage() {
           confirmMode="click"
           impactBullets={[
             'Applies the selected import mode to the current workspace without deleting existing configuration.',
-            'Matching display names may create additional entities depending on mode.',
+            nameConflicts.length
+              ? nameConflictChoice === 'skip'
+                ? `${nameConflicts.length} name conflict(s): those entities are skipped and nothing is duplicated.`
+                : `${nameConflicts.length} name conflict(s): those entities are created under a new unique name.`
+              : 'No name conflicts: every connector and destination in this file is new by name.',
             'Preview token must match the latest preview; stale previews are rejected.',
             'Exports never contain secrets. Connectors and destinations that used secrets are created without them; after the import you are shown which ones to re-enter.',
           ]}

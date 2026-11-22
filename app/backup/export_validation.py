@@ -199,6 +199,69 @@ def verify_no_secret_literals(bundle: dict[str, Any], known_secret_literals: lis
     return issues
 
 
+def _redact_leaf(leaf: str, literals: list[str]) -> str:
+    out = leaf
+    for lit in literals:
+        if out == lit:
+            out = _MASK
+        elif len(lit) >= _MIN_SUBSTRING_SECRET_LEN and lit in out:
+            out = out.replace(lit, _MASK)
+    return out
+
+
+def redact_known_secret_literals(bundle: dict[str, Any], known_secret_literals: list[str] | None) -> list[str]:
+    """Replace every stored secret value found anywhere in ``bundle`` by the mask sentinel (in place).
+
+    This is the value-based backstop behind key-name masking: a secret copied into an innocent key, a
+    free-text template or a note must not survive in the file. Returns the dotted paths that were
+    redacted (never the values) so ``export_integrity`` can state what the exporter had to mask.
+    """
+
+    literals = sorted(
+        {lit for lit in (known_secret_literals or []) if lit and lit != _MASK},
+        key=len,
+        reverse=True,
+    )
+    redacted: list[str] = []
+    if not literals:
+        return redacted
+
+    def _walk(node: Any, path: str) -> Any:
+        if isinstance(node, dict):
+            for key in list(node):
+                child = f"{path}.{key}" if path else str(key)
+                if not path and str(key) == "export_integrity":
+                    continue
+                node[key] = _walk(node[key], child)
+            return node
+        if isinstance(node, list):
+            for idx, item in enumerate(node):
+                node[idx] = _walk(item, f"{path}[{idx}]")
+            return node
+        if isinstance(node, str):
+            new = _redact_leaf(node, literals)
+            if new != node:
+                redacted.append(path)
+            return new
+        return node
+
+    _walk(bundle, "")
+    return redacted
+
+
+def count_masked_fields(bundle: dict[str, Any]) -> int:
+    """Number of values in ``bundle`` that carry the mask sentinel (``export_integrity`` excluded)."""
+
+    def _count(node: Any) -> int:
+        if isinstance(node, dict):
+            return sum(_count(v) for k, v in node.items() if k != "export_integrity")
+        if isinstance(node, list):
+            return sum(_count(v) for v in node)
+        return 1 if node == _MASK else 0
+
+    return _count(bundle)
+
+
 def verify_credential_reference_preservation(bundle: dict[str, Any]) -> list[str]:
     """Ensure reference-like auth fields were not stripped to empty by mistake (export sanity)."""
 
@@ -258,6 +321,8 @@ def build_export_integrity_report(
     hdr_issues = [m for m in masking if "headers[" in m]
     return {
         "secrets_masked": not masking,
+        "masked_field_count": count_masked_fields(bundle),
+        "value_scan_redactions": [],
         "webhook_headers_masked": not hdr_issues,
         "credential_references_ok": not refs,
         "deterministic_ordering_ok": not ordering,
