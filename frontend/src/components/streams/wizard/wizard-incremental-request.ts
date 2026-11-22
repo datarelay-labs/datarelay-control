@@ -457,6 +457,36 @@ function preferUserBodyValues(draft: string, baseBody: string | undefined, defau
 }
 
 /**
+ * E-057: the request editor and the incremental query template can both contain
+ * a static parameter (e.g. limit=20). When the operator edits the request from
+ * 20 to 25, update a matching *unchanged* draft line too. Do not rewrite an
+ * intentionally different template override, a checkpoint variable or another
+ * parameter: those continue to be authored from Record Selection.
+ */
+export function reconcileIncrementalQueryParamDraft(
+  before: Readonly<Record<string, string>>,
+  after: Readonly<Record<string, string>>,
+  pattern: IncrementalRequestPattern,
+  draft: string,
+): string {
+  if (pattern !== 'query_params' && !(pattern === 'custom' && looksLikeQueryParams(draft))) return draft
+  const changed = new Map(
+    Object.entries(before)
+      .filter(([key, value]) => Object.hasOwn(after, key) && after[key] !== value)
+      .map(([key, value]) => [key, { before: value, after: after[key] ?? '' }]),
+  )
+  if (changed.size === 0) return draft
+  return draft.split('\n').map((line) => {
+    const sep = line.indexOf('=')
+    if (sep < 0) return line
+    const key = line.slice(0, sep).trim()
+    const match = changed.get(key)
+    if (!match || line.slice(sep + 1).trim() !== match.before) return line
+    return line.slice(0, sep + 1) + match.after
+  }).join('\n')
+}
+
+/**
  * Apply an incremental-request template to an in-progress HTTP request payload.
  * Pure helper used at create-stream payload time so the user does not have to bounce
  * back to the HTTP Request step. `none`/empty drafts are no-ops.
