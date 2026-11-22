@@ -16,6 +16,21 @@ from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
 LogFn = Callable[[dict[str, Any]], None]
 SendFn = Callable[[RouteRuntimeContext, list[dict[str, Any]]], RouteSendOutcome]
 
+# Source cursor and dedup bookkeeping must never become destination-visible fields.
+# Keep the original batch intact for post-send checkpoint and dedup registration.
+_INTERNAL_TRANSPORT_FIELDS = frozenset({"gdc_db_watermark", "gdc_db_order_value"})
+
+
+def _destination_safe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            key: value
+            for key, value in event.items()
+            if not (isinstance(key, str) and (key.startswith("__gdc_") or key in _INTERNAL_TRANSPORT_FIELDS))
+        }
+        for event in events
+    ]
+
 
 def _skip_reason_for_decision(decision: PolicyDecision) -> str | None:
     if decision == "block":
@@ -117,7 +132,7 @@ def route_delivery_stage(
         delivery_success = True
         skip_reason = "no_send_fn"
     else:
-        send_outcome = send_fn(route_ctx, events)
+        send_outcome = send_fn(route_ctx, _destination_safe_events(events))
         disposition = "delivered"
         if send_outcome.rate_limited:
             skip_reason = "rate_limited"

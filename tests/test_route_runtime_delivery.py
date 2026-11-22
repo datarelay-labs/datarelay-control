@@ -270,3 +270,37 @@ def test_process_route_no_double_policy_in_delivery(classification_enabled: None
         with patch("app.runners.route_stage.route_delivery_stage", wraps=route_delivery_stage) as mock_delivery:
             process_route_pipeline(route_ctx, shared)
             mock_delivery.assert_called_once()
+
+
+def test_internal_dedup_and_database_cursor_metadata_not_sent_to_destination() -> None:
+    # Source/registry bookkeeping must remain available after a successful send,
+    # but must not appear in the destination payload or change caller-owned data.
+    events = [{
+        "message": "hello",
+        "event_id": "evt-1",
+        "__gdc_dedup_key": "evt-1",
+        "__gdc_dedup_queue_id": 7,
+        "__gdc_future_internal_field": "reserved",
+        "gdc_db_watermark": "2026-11-22T01:00:00Z",
+        "gdc_db_order_value": 333,
+        "classification_level": "internal",
+    }]
+    observed: list[dict[str, Any]] = []
+
+    def send_fn(_ctx: RouteRuntimeContext, payload: list[dict[str, Any]]) -> RouteSendOutcome:
+        observed.extend(payload)
+        return RouteSendOutcome(success=True, latency_ms=1)
+
+    result = route_delivery_stage(
+        _route_ctx(), _shared(), _policy_result(), events, send_fn=send_fn
+    )
+
+    assert result.delivery_success is True
+    assert observed == [{
+        "message": "hello",
+        "event_id": "evt-1",
+        "classification_level": "internal",
+    }]
+    assert events[0]["__gdc_dedup_key"] == "evt-1"
+    assert events[0]["__gdc_dedup_queue_id"] == 7
+    assert events[0]["gdc_db_watermark"] == "2026-11-22T01:00:00Z"
