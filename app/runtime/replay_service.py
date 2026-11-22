@@ -18,6 +18,14 @@ from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.destinations.repository import get_destination_by_id
 from app.formatters.message_prefix import MessagePrefixResolveContext, build_message_prefix_context
 from app.logs.models import DeliveryLog
+from app.replay.reconciliation import (
+    REPLAY_ALREADY_DELIVERED,
+    SUPERSEDE_SOURCE_LOGS_REPLAY,
+    compute_event_identities,
+    describe_prior_delivery,
+    find_prior_delivery,
+    supersede_delivered_jobs,
+)
 from app.routes.models import Route
 from app.runtime.preview_service import run_route_delivery_preview
 from app.runtime.schemas import RouteDeliveryPreviewRequest
@@ -41,6 +49,13 @@ class ReplayNotEligibleError(Exception):
         super().__init__(message)
         self.error_code = error_code
         self.message = message
+
+
+class ReplayAlreadyDeliveredError(ReplayNotEligibleError):
+    """The failed events were already delivered by another replay path (E-051)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(REPLAY_ALREADY_DELIVERED, message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,14 +208,80 @@ def _build_prefix_context(stream_name: str, stream_id: int, route_id: int, desti
     )
 
 
+_PRIOR_LOG_REPLAY_SCAN_LIMIT = 200
+
+
+def _prior_logs_replay_of(db: Session, row: DeliveryLog) -> DeliveryLog | None:
+    """Return an earlier live (non dry-run) Logs replay of the very same failed log row."""
+
+    candidates = (
+        db.query(DeliveryLog)
+        .filter(
+            DeliveryLog.stage == "replay_delivered",
+            DeliveryLog.stream_id == row.stream_id,
+            DeliveryLog.route_id == row.route_id,
+        )
+        .order_by(DeliveryLog.id.desc())
+        .limit(_PRIOR_LOG_REPLAY_SCAN_LIMIT)
+        .all()
+    )
+    for candidate in candidates:
+        payload = candidate.payload_sample if isinstance(candidate.payload_sample, dict) else {}
+        if payload.get("replay_source_log_id") == int(row.id) and payload.get("dry_run") is False:
+            return candidate
+    return None
+
+
+def _assert_not_already_delivered(
+    db: Session,
+    row: DeliveryLog,
+    *,
+    destination_id: int,
+    events: list[dict[str, Any]],
+) -> None:
+    """Refuse a live replay whose events another path already delivered (E-051 / E-113)."""
+
+    prior_log = _prior_logs_replay_of(db, row)
+    if prior_log is not None:
+        raise ReplayAlreadyDeliveredError(
+            f"This failed delivery was already replayed from Logs (log #{int(prior_log.id)}). "
+            "Replaying again would duplicate the events at the destination; "
+            "confirm the explicit duplicate-delivery override to replay anyway."
+        )
+    prior_job = find_prior_delivery(
+        db,
+        stream_id=int(row.stream_id) if row.stream_id is not None else 0,
+        destination_id=int(destination_id),
+        route_id=int(row.route_id) if row.route_id is not None else None,
+        dynamic_route_id=None,
+        failover_route_id=None,
+        identities=compute_event_identities(events),
+        since=row.created_at,
+        known_run_ids=[row.run_id] if row.run_id else [],
+    )
+    if prior_job is not None:
+        raise ReplayAlreadyDeliveredError(
+            f"These events were already delivered to this destination: {describe_prior_delivery(prior_job)} "
+            "Replaying again would duplicate them; confirm the explicit duplicate-delivery override "
+            "to replay anyway."
+        )
+
+
 def replay_delivery_log(
     db: Session,
     log_id: int,
     *,
     dry_run: bool = False,
     destination_registry: DestinationAdapterRegistry | None = None,
+    allow_redelivery: bool = False,
 ) -> ReplayExecutionResult:
-    """Replay one failed route delivery log without updating source checkpoints."""
+    """Replay one failed route delivery log without updating source checkpoints.
+
+    A live replay is refused with ``REPLAY_ALREADY_DELIVERED`` when the same failure was
+    already delivered (an earlier Logs replay, a replayed or superseded Replay Center job)
+    unless ``allow_redelivery`` is set. A successful live replay supersedes the open Replay
+    Center jobs for the same events so the two recovery paths stay reconciled.
+    """
 
     row = db.query(DeliveryLog).filter(DeliveryLog.id == int(log_id)).first()
     if row is None:
@@ -222,6 +303,9 @@ def replay_delivery_log(
     stream = get_stream_by_id(db, int(row.stream_id)) if row.stream_id is not None else None
     stream_name = str(getattr(stream, "name", "") or "") if stream is not None else ""
     stream_id = int(row.stream_id) if row.stream_id is not None else 0
+
+    if not dry_run and not allow_redelivery:
+        _assert_not_already_delivered(db, row, destination_id=int(destination.id), events=events)
 
     replay_run_id = str(uuid.uuid4())
     _persist_replay_stage_log(
@@ -342,6 +426,23 @@ def replay_delivery_log(
             "destination_type": destination_type,
         },
     )
+    superseded_job_ids = supersede_delivered_jobs(
+        db,
+        stream_id=stream_id,
+        destination_id=int(destination.id),
+        route_id=int(route.id),
+        delivered_events=events,
+        source=SUPERSEDE_SOURCE_LOGS_REPLAY,
+        detail=f"Logs log #{int(log_id)}",
+        known_run_ids=[row.run_id] if row.run_id else [],
+    )
+    if superseded_job_ids:
+        logger.info(
+            "replay_jobs_superseded log_id=%s job_ids=%s",
+            log_id,
+            superseded_job_ids,
+            extra={"replay_run_id": replay_run_id},
+        )
     return ReplayExecutionResult(
         log_id=log_id,
         dry_run=False,

@@ -24,6 +24,12 @@ class GovernanceReplayEntry(BaseModel):
     outcome: ReplayOutcomeLabel | None = None
     event_count: int = 0
     correlation_id: str | None = None
+    route_id: int | None = None
+    destination_id: int | None = None
+    # Number of failed polls folded into this job (E-114); 1 for a single failure.
+    occurrence_count: int = 1
+    # Explains a non-obvious state, e.g. why a Discarded job was superseded (E-113).
+    status_note: str | None = None
 
 
 class GovernanceReplayListResponse(BaseModel):
@@ -77,10 +83,17 @@ class GovernanceReplayDetailResponse(BaseModel):
     error_type: str | None = None
     error_message: str | None = None
     can_execute: bool = False
+    can_discard: bool = False
+
+
+class GovernanceReplayExecuteRequest(BaseModel):
+    # Explicit operator override for events another path already delivered (duplicates).
+    allow_redelivery: bool = False
 
 
 class GovernanceReplayBulkRequest(BaseModel):
     ids: list[int] = Field(default_factory=list, min_length=1)
+    allow_redelivery: bool = False
 
 
 class GovernanceReplayBulkItemResult(BaseModel):
@@ -88,6 +101,7 @@ class GovernanceReplayBulkItemResult(BaseModel):
     outcome: str
     message: str
     status: str | None = None
+    error_code: str | None = None
 
 
 class GovernanceReplayBulkResponse(BaseModel):
@@ -102,3 +116,4 @@ class GovernanceReplayExecuteResponse(BaseModel):
     outcome: str
     message: str
     status: str | None = None
+    error_code: str | None = None
