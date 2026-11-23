@@ -47,3 +47,44 @@ def test_custom_source_paths_independent_from_mapping_compiled_paths() -> None:
     )
     assert mapped == {"out": 5, "id": 5, "nested": {"keep": "y"}}
     assert event == {"id": 5, "nested": {"token": "x", "keep": "y"}}
+
+
+
+def test_optimized_matching_equals_legacy_residual_for_varied_paths() -> None:
+    from app.mappers.pass_through import merge_unknown_field_pass_through
+    from app.parsers.jsonpath_parser import extract_one_compiled
+    from app.runtime.copy_utils import copy_json_value
+
+    source = {
+        "records": [
+            {"id": 9007199254740993, "tag": "é", "details": {"keep": None}},
+            {"id": 9007199254740994, "tag": "🛡️", "details": {"empty": []}},
+        ],
+        "empty": {}, "plain": [None, {"nested": [1, 2]}],
+        "strange.key": {"v": 7},
+    }
+    suites = [
+        {"one": "$.records[0].id", "two": "$.records[1].tag"},
+        {"one": "$.records[*].tag", "two": "$.records[-1].id"},
+        {"one": "$['strange.key'].v", "two": "$.missing"},
+        {"whole": "$"},
+        {},
+        {"o": "$.records[10].id", "p": "$.records[-5].tag"},
+        {"o": "$.plain[1].nested", "p": "$.empty"},
+    ]
+    for paths in suites:
+        compiled = compile_mappings(paths)
+        before = copy.deepcopy(source)
+        expected = {
+            key: copy_json_value(extract_one_compiled(expr, source, default=None))
+            for key, expr in compiled.items()
+        }
+        if compiled:
+            expected = merge_unknown_field_pass_through(source, expected, tuple(paths.values()))
+        else:
+            expected = copy_json_value(source)
+        observed = apply_compiled_mapping(
+            source, compiled, source_json_paths=tuple(paths.values())
+        )
+        assert observed == expected, paths
+        assert source == before, paths

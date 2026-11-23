@@ -18,11 +18,12 @@
 
 Reproducible cProfile evidence: baseline 50-record medium/5-route sample (`/home/aella/.local/state/control-cperf-20261123/baseline.prof`). Top cumulative times in the sampled call graph: Route pipeline 0.137 s, mapping 0.075 s, unknown-field residual handling 0.054 s, recursive copying 0.047 s (overlapping inclusive costs). JSONPath matching 0.029 s and enrichment 0.024 s. The existing 1024-entry JSONPath compile cache and batch-local route transform/protection reuse were present before this work. Sensitive Detection and external I/O were not activated by this synthetic sample and remain outside its proof.
 
-## C-PERF-2 — Pure Python change and before/after
+## C-PERF-2 — Initial Python change and exploratory A/B (historical; see matched results below)
 
 1. `app/mappers/pass_through.py`: prune only premarked path ancestors instead of descending through unrelated source structures, preserving untouched empty containers.
 2. `app/parsers/event_extractor.py`: remove redundant isolation copies before the single normalizing deep copy; source objects remain unmodified and output remains detached.
 3. `tests/test_pass_through.py` and `tests/test_event_extractor_copy_once.py`: nested/array/root/error/unicode/large integer and mutation-isolation coverage.
+4. `app/mappers/mapper.py` and `app/mappers/pass_through.py`: reuse guarded first JSONPath matches; differential tests check old vs new results, literals, nested selectors, errors and source isolation.
 
 | Payload | Routes | Baseline input EPS | Candidate EPS | Change | Baseline p95 ms | Candidate p95 ms | Receipt hash |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -38,6 +39,26 @@ Reproducible cProfile evidence: baseline 50-record medium/5-route sample (`/home
 
 All nine synthetic receipt digests match exactly, with the same event and Route delivery counts. Some large-record p95 samples worsened; there is no blanket performance PASS. See retained machine JSON in `docs/performance/evidence/` for p50/p99, CPU, RSS, GC, errors and digests.
 
+## C-PERF-2 matched A/B after JSONPath first-match reuse (e60d5390)
+
+The initial one-pass reported gains were not stable: a first 31-iteration A/B exposed 3–5% five-Route regressions. The new candidate reuses already evaluated first JSONPath matches in mapping and residual pruning, with guarded fallback for different path lists.
+
+Two alternating baseline/candidate runs, each 31 batches of 50 events for each 1/2/5 Route × small/medium/large workload. Medians across two runs. CPU-only synthetic measurement, not actual customer EPS or SLA.
+
+| Size | Routes | Baseline EPS | New EPS | Change | Baseline p95 | New p95 | Baseline p99 | New p99 | Receipt |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| small | 1 | 2054.47 | 2799.45 | +36.3% | 32.83 | 20.02 | 35.63 | 21.32 | MATCH |
+| small | 2 | 1178.27 | 1416.33 | +20.2% | 45.35 | 42.14 | 47.87 | 46.68 | MATCH |
+| small | 5 | 944.28 | 1192.08 | +26.2% | 64.29 | 46.39 | 89.07 | 68.86 | MATCH |
+| medium | 1 | 2127.84 | 2448.00 | +15.0% | 27.42 | 25.11 | 28.89 | 32.40 | MATCH |
+| medium | 2 | 1044.83 | 1265.58 | +21.1% | 54.47 | 44.62 | 56.46 | 45.09 | MATCH |
+| medium | 5 | 787.17 | 887.91 | +12.8% | 82.67 | 71.64 | 100.08 | 81.86 | MATCH |
+| large | 1 | 1290.48 | 1335.32 | +3.5% | 41.44 | 39.41 | 42.61 | 43.40 | MATCH |
+| large | 2 | 591.34 | 675.54 | +14.2% | 108.99 | 78.44 | 118.27 | 103.61 | MATCH |
+| large | 5 | 344.41 | 367.20 | +6.6% | 171.26 | 150.97 | 180.83 | 166.12 | MATCH |
+
+All nine median EPS improved +3.5% to +36.3%. Some p99 values worsened; no blanket latency claim. Four machine JSON runs are retained in evidence/ as cperf-e60-paired-*.json.
+
 ## C-PERF-3 — Conditional native/Rust evaluation
 
 The external [fast-anything](https://github.com/EL4CTEO/fast-anything) project is MIT-licensed and uses PyO3 for Python. No Rust toolchain was installed on this dev host. The measured hot path involves Python jsonpath-ng AST objects and route/context-sensitive copy/mapping semantics; naive per-field FFI would add conversion costs and a separate platform wheel/rollback dependency. **No Rust port was attempted or deployed:** the conditional native trial has no demonstrated incremental whole-pipeline gain beyond the Python changes, so it remains **NOT ADOPTED** pending a separately demonstrated portable pure-function hotspot with a positive FFI-inclusive A/B.
@@ -48,14 +69,15 @@ Dedicated `tests/test_cperf_loopback_route_e2e.py` sends real HTTP loopback requ
 
 ## C-PERF-5 — Regression and acceptance
 
-- Isolated PostgreSQL affected regression: **194 passed, 1 skipped, 0 failed** across 16 Python test files (2026-11-23).
+- Final isolated PostgreSQL affected regression (after first-match reuse): **201 passed, 1 skipped, 0 failed** across 18 Python files (2026-11-23).
 - Synthetic route loopback receiver integration: **3/3 passed** for 1/2/5 routes.
 - Actual WebhookSender/StreamRunner/PostgreSQL+HTTP receiver: **4/4 passed**, including HTTP 503 checkpoint hold.
+- Post-change focused Mapping/extraction/differential test run: **56/56 PASS**.
 - Unit regression and route loopback test outputs are retained in `/home/aella/.local/state/control-cperf-20261123/`; update this section after full CI.
 - Existing `5–20 EPS` dev lab seeding is unmodified by this patch.
 - Formal BFS 20, two-user FUE 24, official UX57 **not claimed PASSED**; active UX #413 has separate dirty worktrees and is not overwritten.
-- Actual live API/DB multi-route checkpoint/replay/security policies and entire product UI are not proven by the CPU-only benchmark.
+- Actual StreamRunner+PostgreSQL+Webhook receipt/checkpoint policy is covered in isolated tests. Customer/live network capacity, all replay/quarantine/failover conditions and the authenticated Browser/FUE product surfaces remain unverified.
 
 ## C-PERF-6 — Rollback and handoff
 
-Rollback is a normal revert of the Python optimization commit or using the previous immutable main-v2 artifact; no database schema, persisted contract, new service, Rust wheel or runtime flag is introduced. Disable by reverting commit, retest extraction and pass-through mapping. Do not deploy to production/merge until active UX user gates and exact-head CI/review are completed.
+Rollback is a normal revert of the two Python optimization commits (`11c8d6b6` and `e60d5390`) or using the previous immutable main-v2 artifact; no database schema, persisted contract, new service, Rust wheel or runtime flag is introduced. Disable by reverting commit, retest extraction and pass-through mapping. Do not deploy to production/merge until active UX user gates and exact-head CI/review are completed.
