@@ -171,9 +171,13 @@ describe('AdminRetentionSettings lifecycle workspace', () => {
       policy: retentionFixture,
     })
     renderPanel()
-    await screen.findByTestId('admin-retention-panel')
+    // The panel shell mounts before the async retention policy resolves. Wait
+    // for the actual category action before exercising the confirmation path.
+    const backupTempAction = await screen.findByRole('button', {
+      name: /Run cleanup now for Backup temp/i,
+    })
 
-    await user.click(screen.getByRole('button', { name: /Run cleanup now for Backup temp/i }))
+    await user.click(backupTempAction)
     expect(postAdminRetentionCleanupRun).not.toHaveBeenCalled()
     const dialog = await screen.findByTestId('admin-retention-run-confirm')
     expect(dialog).toHaveTextContent(/Backup temp: rows older than 3 days are deleted/i)
