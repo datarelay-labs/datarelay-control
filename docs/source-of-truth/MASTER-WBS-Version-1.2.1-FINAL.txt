@@ -858,3 +858,79 @@ Execution: M0 -> M1 -> M2/M3/M4/M5 HTTP-two-Route slice with M7 basics -> M6 sou
 expansion -> remaining M5/M7 -> M8 full evidence. Keep Main Runtime/Governance/
 Operations milestones in the full product roadmap, paused while this program is
 unfinished; do not recreate, erase or silently reopen already finished base work.
+
+==================================================
+OWNER-REQUESTED CONTROL RUNTIME PERFORMANCE OPTIMIZATION — 2026-11-23
+C-PERF (Roadmap #354, implementation tracker #466)
+==================================================
+
+Status: QUEUED / NOT IMPLEMENTED.
+Priority/scheduling: existing owner-approved integrated UX program
+#354/#413 remains exclusive until its current user acceptance is complete.
+This is a bounded optimization of the existing Phase B runtime, not a new
+product phase or competing execution roadmap, and does not alter current
+Control v1 completion, UX acceptance or release gates.
+
+Problem/opportunity:
+Profile actual Stream/Route CPU costs and optimize repeatable data processing
+where measured end-to-end gains exist. fast-anything/Rust is conditional;
+there is no verified current Control CPU-spike diagnosis or speedup claim.
+
+C-PERF-0 — Source-bound performance baseline
+- Verify runtime/deployed source and configuration, exact HEAD, worktree,
+  existing validation, per-route fanout and source/destination behaviors.
+- Baseline 1/2/5 routes and representative event payloads; collect EPS,
+  p50/p95/p99, per-stage CPU, memory, failures and delivery receipts.
+- Do not alter the required 5–20 EPS Dev Validation Lab seed behavior.
+
+C-PERF-1 — Hot-path profiling
+- Profile event extraction, Mapping, Enrichment, JSONPath/JSONata/regex,
+  serialization/deep copies, Sensitive Detection, Protection,
+  Classification and Policy processing.
+- Distinguish CPU-bound functions from database, remote I/O, backpressure,
+  runtime/scheduler contention and unrelated UI overhead.
+
+C-PERF-2 — Existing Python optimization first
+- Avoid redundant deterministic work, reuse safely compiled immutable
+  expressions, reduce copies and repeated lookups where verified safe.
+- Preserve cross-route isolation and invalidation of mutable config.
+
+C-PERF-3 — Conditional fast-anything / Rust proof of concept
+- Select at most 1–3 measured pure CPU-hot functions and compare original
+  Python semantics against a bounded native implementation.
+- Include FFI, serialization, build/package portability, rollback/fallback,
+  security and dependency/license review.
+- Reject native port without measured full-pipeline gains.
+
+C-PERF-4 — Throughput/resource qualification
+- Run baseline-matched A/B for fanout, nested/big payloads, distinct
+  per-route policy, slow destinations, replay, quarantine and failover.
+- Report CPU per event, p50/p95/p99, throughput, memory and failure rates
+  with real receiver/destination receipts.
+
+C-PERF-5 — Integrity, security, regression and actual user E2E
+- Exact equality of mapped fields and values (including null/large
+  numeric/unicode), error and failure behavior, audit and protection.
+- No changes to checkpoint advancement, route delivery guarantees,
+  replay/quarantine, authorization, policy outcome or source data safety.
+- Required source-bound backend/CI and actual Browser/Full User E2E gates
+  are not replaced by microbenchmarks or synthetic PASS.
+
+C-PERF-6 — Closeout and reproducibility
+- Document measured before/after, changes, failing cases, CI/evidence,
+  rollback and remaining bottlenecks; no production/deployment/release
+  authority is inferred from this backlog entry.
+
+Product and scheduling boundaries:
+- One Stream -> Many Routes -> Many Destinations remains authoritative.
+- Route Processing remains the only supported runtime; no parallel engine,
+  alternate DataFlow entity, additional Marketplace/AI Gateway scope.
+- Existing user-defined streams, routes, checkpoints and configurations
+  must be preserved; test fixtures use isolated disposable databases.
+- Existing #354/#413 UX program stays first in the execution queue until
+  accepted; preserve active source/worker/worktree evidence.
+- Production, destructive, permissions/credentials and release work need
+  their applicable separate authority; this addendum is planning only.
+
+Execution details and acceptance ledger:
+https://github.com/datarelay-labs/datarelay-control/issues/466
