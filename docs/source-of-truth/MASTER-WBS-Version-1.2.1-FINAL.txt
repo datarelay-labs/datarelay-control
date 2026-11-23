@@ -864,7 +864,10 @@ OWNER-REQUESTED CONTROL RUNTIME PERFORMANCE OPTIMIZATION — 2026-11-23
 C-PERF (Roadmap #354, implementation tracker #466)
 ==================================================
 
-Status: QUEUED / NOT IMPLEMENTED.
+Status: IN PROGRESS — isolated Python candidate and synthetic/loopback tests;
+formal UX/BFS/FUE and product E2E gates remain open (2026-11-23).
+Evidence: docs/performance/c-perf-20261123-report.md, PR for C-PERF
+implementation; no deployment/main merge/production approval.
 Priority/scheduling: existing owner-approved integrated UX program
 #354/#413 remains exclusive until its current user acceptance is complete.
 This is a bounded optimization of the existing Phase B runtime, not a new
