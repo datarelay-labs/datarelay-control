@@ -67,6 +67,22 @@ The external [fast-anything](https://github.com/EL4CTEO/fast-anything) project i
 
 Dedicated `tests/test_cperf_loopback_route_e2e.py` sends real HTTP loopback requests to a temporary threaded receiver for 1/2/5 route fanout, tests receiver receipts, large integer value fidelity, nested/unicode payloads, route-specific enrichment and unmodified original records. Route 2 introduces controlled receiver delay. The additional `tests/test_cperf_streamrunner_http_e2e.py` runs the actual `StreamRunner → WebhookSender → HTTP Receiver` with real disposable PostgreSQL checkpoint and delivery logs (4/4 PASS): 1/2/5 Route success plus an HTTP 503 destination with PAUSE_STREAM_ON_FAILURE and held checkpoint. The native webhook default sends one POST per event. Full authenticated Browser, Quarantine and Replay acceptance remain separate and NOT PASSED.
 
+## C-PERF-4a — Measured PostgreSQL and native Webhook A/B (2026-11-24)
+
+A source-matched, isolated actual-transport test (`tests/test_cperf_transport_io_perf.py`) executes native `StreamRunner.run` through `WebhookSender`, a live loopback HTTP receiver and a disposable PostgreSQL16 `gdc_pytest` catalog. Destination explicitly uses `BATCH_JSON_ARRAY` (32 events), seven source batches per Route scenario, each with a 4,096-character synthetic message. Receiver introduces 10ms delay for the second Route. It verifies all HTTP receipts, precise checkpoints, and delivery-log row counts. No operator/test seed changes, no shared DB or authentication configuration changes. This test does not exercise RBAC or browser login.
+
+Baseline source `0cdea717`; optimized source `4f78240c`. Three runs of each variant. EPS and p95 are *run-level medians*; 7 samples per run make percentile tails weak estimates. Service/network state, OS caches and host contention are not perfectly controlled.
+
+| Routes | Baseline median EPS | Candidate median EPS | Delta | Baseline p95 ms | Candidate p95 ms | Baseline CPU-user s | Candidate CPU-user s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 80.89 | 95.82 | +18.5% | 361.93 | 168.36 | 1.26 | 0.98 |
+| 2 | 86.62 | 85.75 | -1.0% | 224.83 | 220.53 | 0.96 | 1.04 |
+| 5 | 70.15 | 68.62 | -2.2% | 285.76 | 304.61 | 1.47 | 1.57 |
+
+**Interpretation:** 1-Route median throughput improved, but 2-Route and 5-Route medians declined slightly. These runs do **not** establish a universal whole-system gain for network/DB-bound routes; the CPU-only improvements in C-PERF-2 must not be quoted as customer throughput. The 2/5 Route differences are small relative to run-to-run variance. Do not add Rust/native fast-path or merge for performance alone without representative operator evidence.
+
+**Machine evidence:** `docs/performance/evidence/cperf-http-db-ab-20261124.json`. Every scenario across both variants passed with zero send errors, exact checkpoint, and 224/448/1120 received records for 1/2/5 Route, respectively.
+
 ## C-PERF-5 — Regression and acceptance
 
 - Final isolated PostgreSQL affected regression (after first-match reuse): **201 passed, 1 skipped, 0 failed** across 18 Python files (2026-11-23).
@@ -74,7 +90,7 @@ Dedicated `tests/test_cperf_loopback_route_e2e.py` sends real HTTP loopback requ
 - Actual WebhookSender/StreamRunner/PostgreSQL+HTTP receiver: **4/4 passed**, including HTTP 503 checkpoint hold.
 - Post-change focused Mapping/extraction/differential test run: **56/56 PASS**.
 - Unit regression and route loopback test outputs are retained in `/home/aella/.local/state/control-cperf-20261123/`; update this section after full CI.
-- Existing `5–20 EPS` dev lab seeding is unmodified by this patch.
+- Existing `5–20 EPS` dev lab seeding is unmodified by this patch; dedicated EPS guardrail `test_lab_throughput_config.py`, `test_dev_validation_lab.py`, and `test_visible_e2e_seed.py` passed **43/44 (1 pre-existing skip, 0 failures)** on 2026-11-24.
 - Formal BFS 20, two-user FUE 24, official UX57 **not claimed PASSED**; active UX #413 has separate dirty worktrees and is not overwritten.
 - Actual StreamRunner+PostgreSQL+Webhook receipt/checkpoint policy is covered in isolated tests. Customer/live network capacity, all replay/quarantine/failover conditions and the authenticated Browser/FUE product surfaces remain unverified.
 

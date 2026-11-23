@@ -1,0 +1,474 @@
+{
+  "benchmark": "cperf_streamrunner_postgresql_native_webhook_loopback",
+  "baseline_source_sha": "0cdea717db6c53de90b9d809e8862814cde3f76e",
+  "candidate_source_sha": "4f78240c1284890dc517b154851b3cdd2f2221a7",
+  "date_local": "2026-11-24",
+  "workload": {
+    "routes": [
+      1,
+      2,
+      5
+    ],
+    "source_events_per_run": 32,
+    "runs_per_route": 7,
+    "payload_message_chars": 4096,
+    "receiver": "loopback HTTP BATCH_JSON_ARRAY, route 1 adds 10ms delay",
+    "database": "disposable PostgreSQL16 gdc_pytest, loopback port 55645",
+    "measure": "StreamRunner.run only, excludes schema setup, includes DB commits, HTTP requests and source checkpoint updates"
+  },
+  "rounds": {
+    "baseline": [
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.09,
+          "cpu_user_s": 1.04,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            36,
+            4,
+            0
+          ],
+          "input_eps": 88.97,
+          "p50_ms": 172.48,
+          "p95_ms": 188.58,
+          "p99_ms": 188.58,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 188252,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.1,
+          "cpu_user_s": 0.93,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            17,
+            2,
+            0
+          ],
+          "input_eps": 88.87,
+          "p50_ms": 204.319,
+          "p95_ms": 217.213,
+          "p99_ms": 217.213,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 189276,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.14,
+          "cpu_user_s": 1.47,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            30,
+            3,
+            0
+          ],
+          "input_eps": 70.15,
+          "p50_ms": 255.361,
+          "p95_ms": 315.555,
+          "p99_ms": 315.555,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 192348,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ],
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.09,
+          "cpu_user_s": 1.26,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            37,
+            4,
+            1
+          ],
+          "input_eps": 80.89,
+          "p50_ms": 176.682,
+          "p95_ms": 386.733,
+          "p99_ms": 386.733,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 184880,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.08,
+          "cpu_user_s": 0.96,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            19,
+            2,
+            0
+          ],
+          "input_eps": 86.41,
+          "p50_ms": 202.628,
+          "p95_ms": 224.828,
+          "p99_ms": 224.828,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 186288,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.11,
+          "cpu_user_s": 1.27,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            32,
+            2,
+            0
+          ],
+          "input_eps": 76.95,
+          "p50_ms": 244.143,
+          "p95_ms": 275.435,
+          "p99_ms": 275.435,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 190000,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ],
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.1,
+          "cpu_user_s": 1.3,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            37,
+            4,
+            1
+          ],
+          "input_eps": 76.7,
+          "p50_ms": 182.463,
+          "p95_ms": 361.931,
+          "p99_ms": 361.931,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 185020,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.07,
+          "cpu_user_s": 1.0,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            19,
+            2,
+            0
+          ],
+          "input_eps": 86.62,
+          "p50_ms": 200.352,
+          "p95_ms": 244.839,
+          "p99_ms": 244.839,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 186300,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.16,
+          "cpu_user_s": 1.49,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            31,
+            2,
+            0
+          ],
+          "input_eps": 68.92,
+          "p50_ms": 277.036,
+          "p95_ms": 285.76,
+          "p99_ms": 285.76,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 189628,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ]
+    ],
+    "candidate": [
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.08,
+          "cpu_user_s": 1.14,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            36,
+            3,
+            0
+          ],
+          "input_eps": 86.13,
+          "p50_ms": 183.379,
+          "p95_ms": 188.524,
+          "p99_ms": 188.524,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 186676,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.08,
+          "cpu_user_s": 1.05,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            18,
+            1,
+            0
+          ],
+          "input_eps": 85.75,
+          "p50_ms": 208.208,
+          "p95_ms": 220.531,
+          "p99_ms": 220.531,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 188852,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.18,
+          "cpu_user_s": 1.64,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            29,
+            2,
+            0
+          ],
+          "input_eps": 64.78,
+          "p50_ms": 278.237,
+          "p95_ms": 322.01,
+          "p99_ms": 322.01,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 192308,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ],
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.07,
+          "cpu_user_s": 0.98,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            37,
+            3,
+            0
+          ],
+          "input_eps": 95.82,
+          "p50_ms": 153.766,
+          "p95_ms": 168.359,
+          "p99_ms": 168.359,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 186424,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.09,
+          "cpu_user_s": 1.04,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            16,
+            2,
+            0
+          ],
+          "input_eps": 88.77,
+          "p50_ms": 204.686,
+          "p95_ms": 206.695,
+          "p99_ms": 206.695,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 187448,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.14,
+          "cpu_user_s": 1.53,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            27,
+            3,
+            0
+          ],
+          "input_eps": 69.31,
+          "p50_ms": 280.04,
+          "p95_ms": 304.605,
+          "p99_ms": 304.605,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 190264,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ],
+      [
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.07,
+          "cpu_user_s": 0.93,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            37,
+            3,
+            0
+          ],
+          "input_eps": 96.92,
+          "p50_ms": 148.937,
+          "p95_ms": 162.774,
+          "p99_ms": 162.774,
+          "receiver_events": 224,
+          "routes": 1,
+          "rss_kb": 185900,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.17,
+          "cpu_user_s": 0.94,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            16,
+            2,
+            0
+          ],
+          "input_eps": 84.36,
+          "p50_ms": 190.305,
+          "p95_ms": 433.362,
+          "p99_ms": 433.362,
+          "receiver_events": 448,
+          "routes": 2,
+          "rss_kb": 187180,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        },
+        {
+          "checkpoint": "batch06-event31",
+          "cpu_sys_s": 0.14,
+          "cpu_user_s": 1.57,
+          "event_payload_chars": 4096,
+          "events_per_run": 32,
+          "failures": 0,
+          "gc_collections": [
+            27,
+            3,
+            0
+          ],
+          "input_eps": 68.62,
+          "p50_ms": 284.553,
+          "p95_ms": 301.685,
+          "p99_ms": 301.685,
+          "receiver_events": 1120,
+          "routes": 5,
+          "rss_kb": 189612,
+          "runs": 7,
+          "scope": "isolated-db-http-e2e"
+        }
+      ]
+    ]
+  },
+  "summary": [
+    {
+      "route_count": 1,
+      "baseline_median_eps": 80.89,
+      "candidate_median_eps": 95.82,
+      "eps_change_pct": 18.46,
+      "baseline_median_p95_ms": 361.931,
+      "candidate_median_p95_ms": 168.359,
+      "baseline_median_cpu_user_s": 1.26,
+      "candidate_median_cpu_user_s": 0.98,
+      "receiver_events_each_round": 224,
+      "failure_count": 0,
+      "checkpoint_verified": true
+    },
+    {
+      "route_count": 2,
+      "baseline_median_eps": 86.62,
+      "candidate_median_eps": 85.75,
+      "eps_change_pct": -1.0,
+      "baseline_median_p95_ms": 224.828,
+      "candidate_median_p95_ms": 220.531,
+      "baseline_median_cpu_user_s": 0.96,
+      "candidate_median_cpu_user_s": 1.04,
+      "receiver_events_each_round": 448,
+      "failure_count": 0,
+      "checkpoint_verified": true
+    },
+    {
+      "route_count": 5,
+      "baseline_median_eps": 70.15,
+      "candidate_median_eps": 68.62,
+      "eps_change_pct": -2.18,
+      "baseline_median_p95_ms": 285.76,
+      "candidate_median_p95_ms": 304.605,
+      "baseline_median_cpu_user_s": 1.47,
+      "candidate_median_cpu_user_s": 1.57,
+      "receiver_events_each_round": 1120,
+      "failure_count": 0,
+      "checkpoint_verified": true
+    }
+  ]
+}
