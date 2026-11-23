@@ -160,16 +160,23 @@ def _apply_selected_removals(
         _remove_concrete_path(root, tokens)
 
     def prune_only_affected(node: Any) -> None:
+        # Every affected descendant has all of its container ancestors marked
+        # while walking the selected JSONPaths above. Do not scan unrelated
+        # subtrees: they may be large and their existing empty values must stay.
         if isinstance(node, dict):
             for key, child in list(node.items()):
+                if id(child) not in affected:
+                    continue
                 prune_only_affected(child)
-                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                if isinstance(child, (dict, list)) and not child:
                     del node[key]
         elif isinstance(node, list):
             for index in range(len(node) - 1, -1, -1):
                 child = node[index]
+                if id(child) not in affected:
+                    continue
                 prune_only_affected(child)
-                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                if isinstance(child, (dict, list)) and not child:
                     node.pop(index)
 
     prune_only_affected(root)
