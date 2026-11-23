@@ -6,6 +6,7 @@ The test uses synthetic JSON only; no database, network or shared state.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +24,14 @@ def _invoke(path: Path, *, seed: int = 123, empty: bool = False, baseline: Path 
         command.append("--allow-empty")
     if baseline:
         command.extend(("--compare-to", str(baseline)))
-    return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False, timeout=30)
+    # A child started from scripts/perf does not implicitly inherit pytest's
+    # project-root sys.path. Set the root explicitly for both local and CI.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(ROOT), env.get("PYTHONPATH", ""))))
+    return subprocess.run(
+        command, cwd=ROOT, env=env, capture_output=True, text=True,
+        check=False, timeout=30,
+    )
 
 
 def test_mapping_differential_cli_reproducible_and_detects_mismatch(tmp_path: Path) -> None:
