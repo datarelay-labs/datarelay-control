@@ -44,12 +44,13 @@ The external [fast-anything](https://github.com/EL4CTEO/fast-anything) project i
 
 ## C-PERF-4 — Transport and backpressure scope
 
-Dedicated `tests/test_cperf_loopback_route_e2e.py` sends real HTTP loopback requests to a temporary threaded receiver for 1/2/5 route fanout, tests receiver receipts, large integer value fidelity, nested/unicode payloads, route-specific enrichment and unmodified original records. Route 2 introduces controlled receiver delay. Actual configured Destination/DB/Replay/Quarantine/Failover qualification is independent and remains part of the full User E2E gate.
+Dedicated `tests/test_cperf_loopback_route_e2e.py` sends real HTTP loopback requests to a temporary threaded receiver for 1/2/5 route fanout, tests receiver receipts, large integer value fidelity, nested/unicode payloads, route-specific enrichment and unmodified original records. Route 2 introduces controlled receiver delay. The additional `tests/test_cperf_streamrunner_http_e2e.py` runs the actual `StreamRunner → WebhookSender → HTTP Receiver` with real disposable PostgreSQL checkpoint and delivery logs (4/4 PASS): 1/2/5 Route success plus an HTTP 503 destination with PAUSE_STREAM_ON_FAILURE and held checkpoint. The native webhook default sends one POST per event. Full authenticated Browser, Quarantine and Replay acceptance remain separate and NOT PASSED.
 
 ## C-PERF-5 — Regression and acceptance
 
 - Isolated PostgreSQL affected regression: **194 passed, 1 skipped, 0 failed** across 16 Python test files (2026-11-23).
-- Isolated real HTTP loopback receiver integration: **3/3 passed** for 1/2/5 routes.
+- Synthetic route loopback receiver integration: **3/3 passed** for 1/2/5 routes.
+- Actual WebhookSender/StreamRunner/PostgreSQL+HTTP receiver: **4/4 passed**, including HTTP 503 checkpoint hold.
 - Unit regression and route loopback test outputs are retained in `/home/aella/.local/state/control-cperf-20261123/`; update this section after full CI.
 - Existing `5–20 EPS` dev lab seeding is unmodified by this patch.
 - Formal BFS 20, two-user FUE 24, official UX57 **not claimed PASSED**; active UX #413 has separate dirty worktrees and is not overwritten.
