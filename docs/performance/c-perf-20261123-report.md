@@ -94,6 +94,26 @@ Baseline source `0cdea717`; optimized source `4f78240c`. Three runs of each vari
 - Formal BFS 20, two-user FUE 24, official UX57 **not claimed PASSED**; active UX #413 has separate dirty worktrees and is not overwritten.
 - Actual StreamRunner+PostgreSQL+Webhook receipt/checkpoint policy is covered in isolated tests. Customer/live network capacity, all replay/quarantine/failover conditions and the authenticated Browser/FUE product surfaces remain unverified.
 
+## C-PERF-5a — Deterministic Mapping differential qualification (2026-11-24)
+
+The reproducible **synthetic-only** `scripts/perf/cperf_mapping_differential.py` harness was run against both source variants using the *same test driver*, Python environment, deterministic seed (`46620261124`), and a pool of 18 JSONPath selectors. Source trees were baseline `0cdea717` (docs-only, before Python optimization) and candidate `2803820a` (optimized). A no-empty mode and a mode that introduces unrelated empty containers each exercised **1,200** randomly combined events with nested arrays/objects, wildcard/negative-index selectors, large integers, unicode, and independent source-selection fallback. The harness also checks that mapping does not mutate input and that modifications to the mapped result do not alias the original source.
+
+- **2,400/2,400 source-matched JSONL records byte-identical; 0 mapping/extraction errors.**
+- Normal baseline/candidate SHA-256: `7aa9b54f1fe1cd753cacafed75304f2731652dd0c9a824f778a1caf13d343281`.
+- Empty-container baseline/candidate SHA-256: `615a8443d28f54d2a527ff01873079fd7f9874cede44e5fcc35a366dd3425f7a`.
+- `--compare-to` makes a candidate run fail on any byte mismatch; its positive/deterministic and intentionally mismatched negative cases plus existing mapping/extraction coverage passed **22/22 focused Pytests**.
+- Small metadata evidence: `docs/performance/evidence/cperf-mapping-differential-20261124.json`; raw JSONL retained in dev-drcontrol's existing isolated evidence directory and not added to Git.
+- **Limit:** This is a deterministic source-level differential, not a customer-log corpus, actual HTTP/DB throughput gain, formal authenticated Browser, or operator FUE acceptance; the separate 2/5 Route I/O A/B remains inconclusive.
+
+To repeat from two isolated worktrees, use the candidate harness for both executions (so the driver itself is identical) and separately pin `PYTHONPATH` to the baseline or candidate source:
+
+```bash
+# $BASE and $CAND are absolute source-worktree paths; $PY is the same venv Python.
+(cd "$BASE" && PYTHONPATH="$BASE" "$PY" "$CAND/scripts/perf/cperf_mapping_differential.py" --out /tmp/base.jsonl)
+(cd "$CAND" && PYTHONPATH="$CAND" "$PY" scripts/perf/cperf_mapping_differential.py --out /tmp/cand.jsonl --compare-to /tmp/base.jsonl)
+# Add --allow-empty to both commands for the second 1,200-case cohort.
+```
+
 ## C-PERF-6 — Rollback and handoff
 
 Rollback is a normal revert of the two Python optimization commits (`11c8d6b6` and `e60d5390`) or using the previous immutable main-v2 artifact; no database schema, persisted contract, new service, Rust wheel or runtime flag is introduced. Disable by reverting commit, retest extraction and pass-through mapping. Do not deploy to production/merge until active UX user gates and exact-head CI/review are completed.
