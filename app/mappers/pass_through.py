@@ -160,16 +160,23 @@ def _apply_selected_removals(
         _remove_concrete_path(root, tokens)
 
     def prune_only_affected(node: Any) -> None:
+        # Every affected descendant has all of its container ancestors marked
+        # while walking the selected JSONPaths above. Do not scan unrelated
+        # subtrees: they may be large and their existing empty values must stay.
         if isinstance(node, dict):
             for key, child in list(node.items()):
+                if id(child) not in affected:
+                    continue
                 prune_only_affected(child)
-                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                if isinstance(child, (dict, list)) and not child:
                     del node[key]
         elif isinstance(node, list):
             for index in range(len(node) - 1, -1, -1):
                 child = node[index]
+                if id(child) not in affected:
+                    continue
                 prune_only_affected(child)
-                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                if isinstance(child, (dict, list)) and not child:
                     node.pop(index)
 
     prune_only_affected(root)
@@ -241,13 +248,20 @@ def deep_merge_pass_through(output: dict[str, Any], residual: dict[str, Any]) ->
 
 
 def build_residual_after_mapping(
-    event: dict[str, Any], source_json_paths: Iterable[str]
+    event: dict[str, Any],
+    source_json_paths: Iterable[str],
+    *,
+    selected_match_paths: tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
     residual = copy_json_value(event)
-    # Resolve ALL selections against the original event before any removal.
-    # Parent deletion, overlapping paths, and array index shifts then cannot
-    # silently alter which source fields were considered mapped.
-    selected = _selected_concrete_paths(event, source_json_paths)
+    # Resolve selections against the original event, never a mutated residual.
+    # The Mapping engine can supply the *same first matches* already evaluated
+    # for field projection; standalone callers still evaluate source_json_paths.
+    selected = (
+        {_concrete_tokens(path, source_event=event) for path in selected_match_paths}
+        if selected_match_paths is not None
+        else _selected_concrete_paths(event, source_json_paths)
+    )
     _apply_selected_removals(residual, selected)
     return residual
 
@@ -256,6 +270,8 @@ def merge_unknown_field_pass_through(
     event: dict[str, Any],
     output: dict[str, Any],
     source_json_paths: Iterable[str],
+    *,
+    selected_match_paths: tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
     """Copy unmapped source structure into ``output`` (non-mutating merge)."""
 
@@ -265,7 +281,9 @@ def merge_unknown_field_pass_through(
     if maps_whole_event(source_json_paths):
         return output
 
-    residual = build_residual_after_mapping(event, source_json_paths)
+    residual = build_residual_after_mapping(
+        event, source_json_paths, selected_match_paths=selected_match_paths
+    )
     if not residual:
         return output
 

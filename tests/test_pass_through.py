@@ -57,3 +57,36 @@ def test_deep_merge_pass_through_preserves_output() -> None:
     residual = {"user": {"department": "sales"}}
     merged = deep_merge_pass_through(output, residual)
     assert merged == {"user_name": "aaa", "user": {"department": "sales"}}
+
+
+def test_sparse_path_pruning_preserves_untouched_nested_values() -> None:
+    event = {
+        "user": {"name": "alice", "details": {"active": True}},
+        "unrelated": {
+            "empty_object": {},
+            "empty_list": [],
+            "dense": [{"nested": {"deep": []}} for _ in range(20)],
+        },
+        "items": [
+            {"id": 1, "keep": {"empty": []}},
+            {"id": 2, "keep": None},
+        ],
+    }
+    mapped = {"user_name": "alice", "first_id": 1}
+    result = merge_unknown_field_pass_through(
+        event, mapped, ("$.user.name", "$.items[0].id")
+    )
+    assert result == {
+        "user_name": "alice", "first_id": 1,
+        "user": {"details": {"active": True}},
+        "unrelated": event["unrelated"],
+        "items": [
+            {"keep": {"empty": []}},
+            {"id": 2, "keep": None},
+        ],
+    }
+    # Neither input may alias the result or be mutated by the pruning pass.
+    assert event["items"][0]["id"] == 1
+    assert mapped == {"user_name": "alice", "first_id": 1}
+    result["unrelated"]["dense"][0]["nested"]["deep"].append("changed")
+    assert event["unrelated"]["dense"][0]["nested"]["deep"] == []

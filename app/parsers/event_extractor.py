@@ -92,7 +92,7 @@ def extract_events(
     if not path_set:
         if isinstance(raw_response, dict):
             return _normalize_events_with_root(
-                [copy_event_dict(raw_response)], event_root_path
+                [raw_response], event_root_path
             )
         if isinstance(raw_response, list):
             events: list[dict[str, Any]] = []
@@ -102,7 +102,7 @@ def extract_events(
                         f"Expected dict items in raw list at index {idx}, "
                         f"got {type(item).__name__}"
                     )
-                events.append(copy_event_dict(item))
+                events.append(item)
             return _normalize_events_with_root(events, event_root_path)
         raise MappingError(
             "Without event_array_path, raw_response must be a dict or list, "
@@ -128,7 +128,7 @@ def extract_events(
                 event_root_path,
             )
         if isinstance(value, dict):
-            return _normalize_events_with_root([copy_event_dict(value)], event_root_path)
+            return _normalize_events_with_root([value], event_root_path)
         raise MappingError(
             "event_array_path must resolve to a dict or list of dicts; "
             f"got {type(value).__name__}"
@@ -141,12 +141,12 @@ def extract_events(
                 "Multiple JSONPath matches must each be dict events; "
                 f"match {i} is {type(value).__name__}"
             )
-        out.append(copy_event_dict(value))
+        out.append(value)
     return _normalize_events_with_root(out, event_root_path)
 
 
 def _dict_events_from_sequence(items: list[Any], *, context: str) -> list[dict[str, Any]]:
-    """Ensure sequence elements are dicts and return deep copies."""
+    """Validate items before the sole isolation copy in _normalize_events_with_root."""
 
     result: list[dict[str, Any]] = []
     for idx, item in enumerate(items):
@@ -154,5 +154,5 @@ def _dict_events_from_sequence(items: list[Any], *, context: str) -> list[dict[s
             raise MappingError(
                 f"{context}: expected dict at index {idx}, got {type(item).__name__}"
             )
-        result.append(copy_event_dict(item))
+        result.append(item)
     return result

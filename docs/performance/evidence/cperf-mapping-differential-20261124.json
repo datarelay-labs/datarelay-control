@@ -1,0 +1,45 @@
+{
+  "kind": "source-matched-deterministic-mapping-differential",
+  "date_local": "2026-11-24",
+  "baseline_source_sha": "0cdea717db6c53de90b9d809e8862814cde3f76e",
+  "candidate_source_sha": "2803820a663e76c62f690fc8df0448e1aa0076fe",
+  "harness": "scripts/perf/cperf_mapping_differential.py",
+  "harness_shared_between_variants": true,
+  "environment": "dev-drcontrol Python3.12 isolated worktrees, synthetic JSON, no HTTP or PostgreSQL",
+  "seed": 46620261124,
+  "jsonpath_pool_size": 18,
+  "cases_total": 2400,
+  "run_modes": [
+    {
+      "mode": "normal",
+      "cases": 1200,
+      "mapping_or_extraction_errors": 0,
+      "baseline_sha256": "7aa9b54f1fe1cd753cacafed75304f2731652dd0c9a824f778a1caf13d343281",
+      "candidate_sha256": "7aa9b54f1fe1cd753cacafed75304f2731652dd0c9a824f778a1caf13d343281",
+      "exact_byte_matches": 1200,
+      "mismatch_count": 0
+    },
+    {
+      "mode": "with_empty",
+      "cases": 1200,
+      "mapping_or_extraction_errors": 0,
+      "baseline_sha256": "615a8443d28f54d2a527ff01873079fd7f9874cede44e5fcc35a366dd3425f7a",
+      "candidate_sha256": "615a8443d28f54d2a527ff01873079fd7f9874cede44e5fcc35a366dd3425f7a",
+      "exact_byte_matches": 1200,
+      "mismatch_count": 0
+    }
+  ],
+  "checks": [
+    "byte-exact normalized mapping JSONL including ordering",
+    "large integers 2^53+",
+    "Unicode including Korean",
+    "JSONPath array index and wildcard",
+    "source-path mismatch fallback",
+    "original input unmodified",
+    "returned output does not alias source",
+    "sample extraction normalization"
+  ],
+  "limit": "Synthetic mapping/extraction only; not a transport/database throughput, RBAC, authenticated browser, production or formal FUE/BFS qualification.",
+  "raw_local_files": "/home/aella/.local/state/control-cperf-20261123/diff_{base,cand}_{normal,with_empty}_v3.jsonl",
+  "focused_pytest": "22 passed, 0 failed; CLI reproducibility, mismatch negative test, existing mapping/extraction/pass-through coverage"
+}

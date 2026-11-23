@@ -21,7 +21,7 @@ from app.mappers.mapping_results import MappingApplyResult, MappingEventError, M
 from app.mappers.pass_through import merge_unknown_field_pass_through
 from app.mappers.unmapped_policy import should_pass_through_unmapped
 from app.parsers.event_extractor import extract_events
-from app.parsers.jsonpath_parser import compile_jsonpath, extract_one_compiled
+from app.parsers.jsonpath_parser import compile_jsonpath, extract_one_compiled, find_matches_compiled
 from app.runtime.errors import MappingError, ParserError
 
 
@@ -236,14 +236,38 @@ def apply_compiled_mapping(
     if not compiled_mappings:
         return copy_json_value(event)
 
+    # Basic mappings carry matching source paths. Reuse their first materialized
+    # JSONPath matches for residual removal instead of traversing each event
+    # twice. A standalone caller with different source paths must retain the
+    # original independent-selection behavior.
+    reuse_matches = False
+    if source_json_paths is not None and len(source_json_paths) == len(compiled_mappings):
+        try:
+            reuse_matches = all(
+                compile_jsonpath(path) is compiled_expr
+                for path, compiled_expr in zip(source_json_paths, compiled_mappings.values())
+            )
+        except ParserError:
+            # Preserve the previous error stage for malformed custom paths.
+            reuse_matches = False
+
+    first_match_paths: list[Any] = []
     output: dict[str, Any] = {}
     for out_field, compiled_expr in compiled_mappings.items():
-        value = extract_one_compiled(compiled_expr, event, default=None)
+        if reuse_matches:
+            matches = find_matches_compiled(compiled_expr, event)
+            value = matches[0].value if matches else None
+            if matches:
+                first_match_paths.append(matches[0].full_path)
+        else:
+            value = extract_one_compiled(compiled_expr, event, default=None)
         output[out_field] = copy_json_value(value)
 
-    paths = source_json_paths if source_json_paths is not None else None
-    if paths is not None:
-        return merge_unknown_field_pass_through(event, output, paths)
+    if source_json_paths is not None:
+        return merge_unknown_field_pass_through(
+            event, output, source_json_paths,
+            selected_match_paths=tuple(first_match_paths) if reuse_matches else None,
+        )
     return output
 
 
