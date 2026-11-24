@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
+from app.event_metadata import without_runtime_metadata
 from app.route_delivery.config import DeliveryDisposition, RouteDeliveryResult, RouteSendOutcome
 from app.route_delivery.health import classify_route_delivery_health
 from app.route_policy.config import PolicyDecision, RoutePolicyResult
@@ -16,20 +17,9 @@ from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
 LogFn = Callable[[dict[str, Any]], None]
 SendFn = Callable[[RouteRuntimeContext, list[dict[str, Any]]], RouteSendOutcome]
 
-# Source cursor and dedup bookkeeping must never become destination-visible fields.
-# Keep the original batch intact for post-send checkpoint and dedup registration.
-_INTERNAL_TRANSPORT_FIELDS = frozenset({"gdc_db_watermark", "gdc_db_order_value"})
-
-
+# Preserve the original batch for post-send checkpoint and dedup registration.
 def _destination_safe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            key: value
-            for key, value in event.items()
-            if not (isinstance(key, str) and (key.startswith("__gdc_") or key in _INTERNAL_TRANSPORT_FIELDS))
-        }
-        for event in events
-    ]
+    return [without_runtime_metadata(event) for event in events]
 
 
 def _skip_reason_for_decision(decision: PolicyDecision) -> str | None:
