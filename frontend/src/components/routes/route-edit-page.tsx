@@ -643,6 +643,14 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
 
   async function handleSaveRoute() {
     if (!canMutateWorkspace || isSaving || (!isCreateMode && !deliveryDirty)) return
+    // E-058: Delivery save navigates away on success. Never abandon a separate
+    // unsaved Transform draft without an explicit decision by the operator.
+    if (transformDirty) {
+      setSaveError('Transform has unsaved changes. Save Transform on the Transform tab before saving Route. Nothing was saved.')
+      setSaveSuccess(null)
+      setActiveTab('transform')
+      return
+    }
     if (isCreateMode && (backendStreamId == null || !streamOptions.some((option) => option.id === backendStreamId))) {
       setSaveError(streamCatalogError ?? 'Select an existing Stream before creating this Route.')
       setSaveSuccess(null)
@@ -921,6 +929,12 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       {exitSaveBusyNotice && isSaving ? (
         <p role="status" className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-navigation-saving-notice">
           Finish saving this Route before leaving the editor.
+        </p>
+      ) : null}
+      {transformDirty && deliveryDirty ? (
+        <p role="alert" className="text-[12px] font-medium text-amber-900 dark:text-amber-200" data-testid="route-edit-transform-save-blocked-hint">
+          Save Transform before Save Route. Route delivery save cannot discard the unsaved Transform draft;
+          this screen will remain open until the Transform is saved or discarded explicitly.
         </p>
       ) : null}
       {hasUnsavedChanges ? (

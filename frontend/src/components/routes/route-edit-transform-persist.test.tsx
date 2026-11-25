@@ -203,6 +203,48 @@ describe('RouteEditPage transform persist', () => {
     expect(screen.getByDisplayValue('50')).toBeInTheDocument()
   })
 
+  it('E-058 prevents Save Route navigation from silently dropping a dirty Transform draft', async () => {
+    renderRouteEdit()
+    fireEvent.click(await screen.findByTestId('route-edit-tab-transform'))
+    const inheritMapping = await screen.findByTestId('route-transform-inherit-mapping')
+    expect(inheritMapping).not.toBeChecked()
+    fireEvent.click(inheritMapping)
+    await waitFor(() => expect(screen.getByTestId('route-transform-save')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('route-edit-tab-delivery'))
+    const rate = screen.getByDisplayValue('50')
+    fireEvent.change(rate, { target: { value: '40' } })
+    const saveRoute = screen.getByTestId('route-edit-save')
+    expect(saveRoute).toBeEnabled()
+    fireEvent.click(saveRoute)
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(screen.getByTestId('route-edit-transform-save-blocked-hint')).toHaveTextContent('Save Transform before Save Route')
+    expect(await screen.findByTestId('route-edit-save-error')).toHaveTextContent('Transform has unsaved changes')
+    expect(saveRoute).toBeInTheDocument()
+    expect(screen.getByTestId('route-edit-tab-transform')).toHaveClass('bg-violet-600')
+    expect(screen.getByTestId('route-transform-inherit-mapping')).toBeChecked()
+    expect(screen.getByTestId('route-transform-save')).toBeEnabled()
+
+    // Model the persisted mapping readback after the explicit Transform save.
+    const mappingReadback = await fetchRouteMappingUiConfig.mock.results[0].value
+    fetchRouteMappingUiConfig.mockResolvedValue({ ...mappingReadback, inherit_stream_mapping: true })
+    fireEvent.click(screen.getByTestId('route-transform-save'))
+    await waitFor(() => expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(42, { inherit: true }))
+    await waitFor(() => expect(screen.queryByTestId('route-edit-transform-save-blocked-hint')).not.toBeInTheDocument())
+    expect(screen.getByTestId('route-transform-inherit-mapping')).toBeChecked()
+    fireEvent.click(screen.getByTestId('route-edit-tab-delivery'))
+    expect(screen.getByDisplayValue('40')).toBeInTheDocument()
+
+    updateRoute.mockResolvedValue({
+      ...(await fetchRouteById.mock.results[0].value),
+      rate_limit_json: { enabled: true, per_second: 40, burst_size: 100 },
+    })
+    fireEvent.click(saveRoute)
+    await waitFor(() => expect(updateRoute).toHaveBeenCalledTimes(1))
+    expect(updateRoute).toHaveBeenCalledWith(42, expect.objectContaining({
+      rate_limit_json: expect.objectContaining({ per_second: 40 }),
+    }))
+  })
+
   it('persists inherit transform from transform tab', async () => {
     renderRouteEdit()
     fireEvent.click(await screen.findByTestId('route-edit-tab-transform'))
