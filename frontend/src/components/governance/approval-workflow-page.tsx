@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronDown, ClipboardCheck, Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ClipboardCheck, Loader2, Plus, RefreshCw, ShieldAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   activateGovernanceApproval,
@@ -17,6 +17,7 @@ import {
 } from '../../api/gdcGovernanceApprovals'
 import {
   canActivatePolicy,
+  canEditPolicy,
   canApprovePolicy,
   canSubmitApproval,
   governanceAccessDeniedMessage,
@@ -26,6 +27,7 @@ import { getSessionUsername } from '../../auth/session'
 import { cn } from '../../lib/utils'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
+import { PolicyEditorDrawer } from './policy-editor-drawer'
 import { policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 
@@ -364,6 +366,7 @@ function ApprovalDetailDrawer({
 
 export function ApprovalWorkflowPage() {
   const canSubmit = canSubmitApproval()
+  const canAuthorDraft = canSubmit && canEditPolicy()
   const canReview = canApprovePolicy()
   const canActivate = canActivatePolicy()
   const readOnly = !canSubmit && !canReview && !canActivate
@@ -377,6 +380,8 @@ export function ApprovalWorkflowPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approvals, setApprovals] = useState<GovernanceApprovalQueueEntry[]>([])
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [draftSavedMessage, setDraftSavedMessage] = useState<string | null>(null)
   const [selectedPolicyId, setSelectedPolicyId] = useState<number | null>(null)
   const [detail, setDetail] = useState<GovernanceApprovalDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -532,18 +537,39 @@ export function ApprovalWorkflowPage() {
             what can you do next?
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadApprovals()}
-          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
-          data-testid="approval-refresh"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canAuthorDraft ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDraftSavedMessage(null)
+                setEditorOpen(true)
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-violet-700"
+              data-testid="approval-create-draft"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Create policy draft
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void loadApprovals()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+            data-testid="approval-refresh"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {readOnly && readOnlyReason ? <ApprovalReadOnlyBanner message={readOnlyReason} /> : null}
+      {draftSavedMessage ? (
+        <p role="status" data-testid="approval-draft-saved" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-foreground">
+          {draftSavedMessage}
+        </p>
+      ) : null}
 
       <div
         className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200/80 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
@@ -656,7 +682,9 @@ export function ApprovalWorkflowPage() {
             <>
               <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">No policies in the approval queue</p>
               <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
-                Submit a draft policy from Data Protection to start the review workflow.
+                {canAuthorDraft
+                  ? 'Create a policy draft here, then select it to submit for review. Saving a draft does not activate enforcement.'
+                  : 'No policy submissions are available. Ask a Governance Operator to create and submit a policy draft.'}
               </p>
             </>
           )}
@@ -707,6 +735,18 @@ export function ApprovalWorkflowPage() {
           </table>
         </div>
       )}
+
+      {editorOpen && canAuthorDraft ? (
+        <PolicyEditorDrawer
+          open
+          policy={null}
+          onClose={() => setEditorOpen(false)}
+          onSaved={() => {
+            setDraftSavedMessage('Policy draft saved. Select the draft from this queue to submit for review; no policy has been activated.')
+            void loadApprovals()
+          }}
+        />
+      ) : null}
 
       {selectedPolicyId != null ? (
         <ApprovalDetailDrawer

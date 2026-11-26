@@ -302,20 +302,22 @@ export function NewStreamWizardPage() {
     if (!connectorCreateBusy) setConnectorCreateOpen(false)
   }
 
-  const handleConnectorCreated = useCallback((id: number) => {
+  const handleConnectorCreated = useCallback((id: number, streamDraft?: HttpImportWizardLocationState['streamDraft']) => {
     setConnectorCreateBusy(false)
-    // Keep the entire parent draft in React memory, including sample confirmation.
+    // Preserve unrelated draft inputs; changing the source invalidates sample evidence.
     // Connector credentials stay in the create form and are never copied into storage.
     clearWizardCatalogSnapshot()
     setOperationalSampleId(null)
-    setState((current) =>
-      applyWizardConnectorPatch(current, {
+    setState((current) => {
+      const next = applyWizardConnectorPatch(current, {
         connectorId: id,
         sourceId: null,
         registryModuleId: null,
         selectedTemplateIds: [],
-      }),
-    )
+      })
+      return streamDraft ? applyHttpImportToWizardState(next, { connectorId: id, streamDraft }) : next
+    })
+    if (streamDraft) setDraftNotice('Stream fields prefilled from import. Review polling and mapping before creating.')
     setConnectorCatalogEpoch((n) => n + 1)
     setConnectorCreateOpen(false)
   }, [])

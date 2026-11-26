@@ -556,7 +556,9 @@ def _build_auth_json(
         token_path = str(incoming.get("token_path", payload.token_path) or "$.access_token").strip()
         token_content_type = incoming.get("token_content_type", payload.token_content_type)
         token_body_mode = incoming.get("token_body_mode", payload.token_body_mode)
-        token_body = incoming.get("token_body", payload.token_body)
+        # token_body is a secret (E-098): masked on read, so the masked placeholder / a blank value keeps the
+        # stored template and only a newly typed value replaces it (same contract as api_key).
+        token_body = _merge_secret("token_body", incoming, existing_auth)
         access_token_injection = str(incoming.get("access_token_injection", payload.access_token_injection) or "bearer_authorization").strip().lower()
         access_token_query_name = incoming.get("access_token_query_name", payload.access_token_query_name)
         token_custom_headers = incoming.get("token_custom_headers", payload.token_custom_headers)

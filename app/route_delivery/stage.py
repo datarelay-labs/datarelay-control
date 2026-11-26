@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
+from app.event_metadata import without_runtime_metadata
 from app.route_delivery.config import DeliveryDisposition, RouteDeliveryResult, RouteSendOutcome
 from app.route_delivery.health import classify_route_delivery_health
 from app.route_policy.config import PolicyDecision, RoutePolicyResult
@@ -15,6 +16,10 @@ from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
 
 LogFn = Callable[[dict[str, Any]], None]
 SendFn = Callable[[RouteRuntimeContext, list[dict[str, Any]]], RouteSendOutcome]
+
+# Preserve the original batch for post-send checkpoint and dedup registration.
+def _destination_safe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [without_runtime_metadata(event) for event in events]
 
 
 def _skip_reason_for_decision(decision: PolicyDecision) -> str | None:
@@ -117,7 +122,7 @@ def route_delivery_stage(
         delivery_success = True
         skip_reason = "no_send_fn"
     else:
-        send_outcome = send_fn(route_ctx, events)
+        send_outcome = send_fn(route_ctx, _destination_safe_events(events))
         disposition = "delivered"
         if send_outcome.rate_limited:
             skip_reason = "rate_limited"

@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.backup.export_builder import canonical_bundle_json
 from app.backup.export_validation import assert_bundle_json_roundtrip
+from app.backup.name_conflicts import find_name_conflicts
 from app.backup.secret_reentry import collect_secret_reentry
-from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.sources.adapters.registry import SourceAdapterRegistry
@@ -200,9 +200,12 @@ class ValidationOutcome:
     unsupported: list[str] = field(default_factory=list)
     findings: list[dict[str, Any]] = field(default_factory=list)
     classification_summary: dict[str, int] = field(default_factory=dict)
+    name_conflicts: list[dict[str, Any]] = field(default_factory=list)
 
 
-def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) -> ValidationOutcome:
+def validate_import_bundle(
+    db: Session, bundle: dict[str, Any], *, mode: str, clone_name_suffix: str = " (copy)"
+) -> ValidationOutcome:
     conflicts: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     unsupported: list[str] = []
@@ -543,40 +546,24 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
                     }
                 )
 
-    # Connector / destination name collisions with existing DB rows (additive/clone create new PKs).
-    existing_connector_names = {str(c.name) for c in db.query(Connector).all()}
-    for c in connectors:
-        if not isinstance(c, dict):
-            continue
-        name = str(c.get("name") or "").strip()
-        if name and name in existing_connector_names:
-            msg = f"A connector named {name!r} already exists; import will create another connector with the same display name."
-            findings.append(
-                {
-                    "classification": "overwrite_candidate",
-                    "entity_type": "connector",
-                    "code": "CONNECTOR_NAME_EXISTS",
-                    "message": msg,
-                    "details": {"name": name, "export_connector_id": c.get("id")},
-                }
-            )
-
-    existing_dest_names = {str(d.name) for d in db.query(Destination).all()}
-    for d in destinations:
-        if not isinstance(d, dict):
-            continue
-        dn = str(d.get("name") or "").strip()
-        if dn and dn in existing_dest_names:
-            msg = f"A destination named {dn!r} already exists; import may create a second destination with the same name."
-            findings.append(
-                {
-                    "classification": "overwrite_candidate",
-                    "entity_type": "destination",
-                    "code": "DESTINATION_NAME_EXISTS",
-                    "message": msg,
-                    "details": {"name": dn, "export_destination_id": d.get("id")},
-                }
-            )
+    # Connector / destination name collisions with existing DB rows (E-124). Apply never creates a same-name
+    # duplicate silently: it requires an explicit skip / rename choice for every collision listed here.
+    name_conflicts = find_name_conflicts(db, bundle, mode=mode, suffix=clone_name_suffix)
+    for nc in name_conflicts:
+        is_connector = nc["entity_type"] == "connector"
+        findings.append(
+            {
+                "classification": "overwrite_candidate",
+                "entity_type": nc["entity_type"],
+                "code": "CONNECTOR_NAME_EXISTS" if is_connector else "DESTINATION_NAME_EXISTS",
+                "message": nc["message"],
+                "details": {
+                    "name": nc["name"],
+                    "existing_ids": nc["existing_ids"],
+                    ("export_connector_id" if is_connector else "export_destination_id"): nc["export_id"],
+                },
+            }
+        )
 
     for item in collect_secret_reentry(bundle):
         if item["entity_type"] == "connector":
@@ -620,4 +607,5 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
         unsupported=unsupported,
         findings=findings,
         classification_summary=classification_summary,
+        name_conflicts=name_conflicts,
     )

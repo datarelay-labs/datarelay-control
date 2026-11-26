@@ -164,3 +164,58 @@ def test_schema_observation_disabled_is_noop(db_session: Session, monkeypatch: p
     observe_extracted_events(db_session, stream.id, [{"x": 1}])
     db_session.commit()
     assert db_session.get(StreamObservedSchema, stream.id) is None
+
+
+def test_observation_excludes_runtime_metadata_without_mutating_events(monkeypatch):
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr("app.config.settings.GDC_SCHEMA_OBSERVATION_ENABLED", True)
+    monkeypatch.setattr("app.config.settings.GDC_SCHEMA_DRIFT_DETECTION_ENABLED", False)
+    db = MagicMock()
+    db.execute.return_value.scalar_one_or_none.return_value = 1
+    db.get.return_value = None
+    events = [
+        {"id": "a", "__gdc_dedup_key": "a", "__gdc_dedup_queue_id": 7,
+         "gdc_db_watermark": 10, "gdc_db_order_value": 20,
+         "nested": {"__gdc_dedup_key": "vendor-value", "gdc_db_watermark": 5}},
+        {"id": "b", "__gdc_dedup_key": "b", "__gdc_future": {"field": 1}},
+    ]
+    from copy import deepcopy
+    original = deepcopy(events)
+    observe_extracted_events(db, 1, events)
+    row = db.add.call_args.args[0]
+    paths = row.paths_json["paths"]
+    assert set(paths) == {"$.id", "$.nested", "$.nested.__gdc_dedup_key", "$.nested.gdc_db_watermark"}
+    assert paths["$.id"]["occurrence_count"] == 2
+    assert paths["$.nested.gdc_db_watermark"]["occurrence_count"] == 1
+    assert row.total_events_observed == 2
+    assert events == original
+
+
+def test_legacy_internal_paths_are_excluded_without_rewriting_baseline(monkeypatch):
+    from copy import deepcopy
+    from unittest.mock import MagicMock
+    from app.schema_observation.drift_detection import detect_field_changes
+
+    monkeypatch.setattr("app.config.settings.GDC_SCHEMA_OBSERVATION_ENABLED", True)
+    monkeypatch.setattr("app.config.settings.GDC_SCHEMA_DRIFT_DETECTION_ENABLED", True)
+    monkeypatch.setattr("app.config.settings.GDC_SCHEMA_DRIFT_REMOVED_ABSENT_RUNS", 1)
+    legacy_paths = {
+        "$.__gdc_dedup_queue_id": {"type": "integer", "runs_since_seen": 10},
+        "$['__gdc_future.key'].child": {"type": "string", "runs_since_seen": 10},
+        "$.gdc_db_watermark": {"type": "integer", "runs_since_seen": 10},
+        "$.gdc_db_watermark_actual": {"type": "integer", "runs_since_seen": 0},
+        "$.nested.__gdc_dedup_queue_id": {"type": "integer", "runs_since_seen": 0},
+    }
+    row = StreamObservedSchema(stream_id=1, paths_json={"paths": deepcopy(legacy_paths)},
+                               baseline_paths_json={"paths": deepcopy(legacy_paths)},
+                               total_events_observed=10, observation_run_count=3)
+    old_baseline = deepcopy(row.baseline_paths_json)
+    read_model = build_observed_schema_read_model(stream_id=1, row=row)
+    visible = {"$.gdc_db_watermark_actual", "$.nested.__gdc_dedup_queue_id"}
+    assert {entry["path"] for entry in read_model["paths"]} == visible
+    db = MagicMock()
+    assert detect_field_changes(db, stream_id=1, row=row, observed_paths=legacy_paths,
+                                batch_paths={path: "integer" for path in visible}) == []
+    db.execute.assert_not_called()
+    assert row.baseline_paths_json == old_baseline

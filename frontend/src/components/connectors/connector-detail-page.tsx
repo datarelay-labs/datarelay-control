@@ -30,6 +30,7 @@ type ConfiguredSecrets = Partial<
     | 'login_password'
     | 'refresh_token'
     | 'api_key'
+    | 'token_body'
     | 'secret_key'
     | 'db_password'
     | 'remote_password'
@@ -121,7 +122,8 @@ export function ConnectorDetailPage() {
         token_content_type:
           row.auth.token_content_type != null ? String(row.auth.token_content_type as string) : '',
         token_body_mode: String(row.auth.token_body_mode ?? 'empty'),
-        token_body: String(row.auth.token_body ?? ''),
+        // The saved token body is a secret: it is never sent to the browser, only a configured flag.
+        token_body: '',
         access_token_injection: String(row.auth.access_token_injection ?? 'bearer_authorization'),
         access_token_query_name: String(row.auth.access_token_query_name ?? ''),
         token_custom_headers: (row.auth.token_custom_headers as Record<string, string> | undefined) ?? {},
@@ -171,6 +173,7 @@ export function ConnectorDetailPage() {
         login_password: Boolean(row.auth.login_password_configured),
         refresh_token: Boolean(row.auth.refresh_token_configured),
         api_key: Boolean((row.auth as Record<string, unknown>).api_key_configured),
+        token_body: Boolean((row.auth as Record<string, unknown>).token_body_configured),
         secret_key: Boolean(row.secret_key_configured),
         db_password: Boolean(row.db_password_configured),
         remote_password: Boolean(row.remote_password_configured),
@@ -356,6 +359,7 @@ export function ConnectorDetailPage() {
           login_password: Boolean(refreshed.auth.login_password_configured),
           refresh_token: Boolean(refreshed.auth.refresh_token_configured),
           api_key: Boolean((refreshed.auth as Record<string, unknown>).api_key_configured),
+          token_body: Boolean((refreshed.auth as Record<string, unknown>).token_body_configured),
           secret_key: Boolean(refreshed.secret_key_configured),
           db_password: Boolean(refreshed.db_password_configured),
           remote_password: Boolean(refreshed.remote_password_configured),

@@ -1719,6 +1719,9 @@ class DeliveryLogReplayRequest(BaseModel):
     """POST /runtime/replay/delivery-log/{log_id} request body."""
 
     dry_run: bool = False
+    # Explicit operator override: replay even though the same failed events were already
+    # delivered by an earlier Logs replay or a Replay Center job (duplicates are possible).
+    allow_redelivery: bool = False
 
 
 class DeliveryLogReplayResponse(BaseModel):

@@ -203,4 +203,38 @@ describe('LogDetailDrawer modernization', () => {
     expect(screen.queryByTestId('log-detail-replay-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('delivery-log-live-replay-open')).not.toBeInTheDocument()
   })
+
+  it('asks for an explicit override when the failed events were already delivered (E-051)', async () => {
+    const user = userEvent.setup()
+    const replaySpy = vi
+      .spyOn(gdcRuntime, 'replayDeliveryLog')
+      .mockRejectedValueOnce(new Error('409 REPLAY_ALREADY_DELIVERED: These events were already delivered to this destination.'))
+      .mockResolvedValueOnce({
+        log_id: 42,
+        dry_run: false,
+        outcome: 'delivered',
+        message: 'ok',
+        event_count: 1,
+        route_id: 1,
+        destination_id: 1,
+        stream_id: 7,
+        replay_run_id: 'r1',
+      } as never)
+    render(
+      <MemoryRouter>
+        <LogDetailDrawer row={baseRow()} onClose={() => undefined} />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByTestId('delivery-log-live-replay-open'))
+    await user.click(await screen.findByTestId('delivery-log-live-replay-dialog-confirm'))
+
+    expect(await screen.findByTestId('delivery-log-live-replay-dialog')).toHaveTextContent('already delivered')
+    expect(screen.getByTestId('delivery-log-live-replay-dialog-confirm')).toHaveTextContent(/Replay anyway/)
+    expect(replaySpy).toHaveBeenCalledTimes(1)
+    expect(replaySpy.mock.calls[0][1]).toEqual({ dry_run: false })
+
+    await user.click(screen.getByTestId('delivery-log-live-replay-dialog-confirm'))
+    expect(replaySpy).toHaveBeenCalledTimes(2)
+    expect(replaySpy.mock.calls[1][1]).toEqual({ dry_run: false, allow_redelivery: true })
+  })
 })

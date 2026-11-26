@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.event_metadata import is_runtime_metadata_path, without_runtime_metadata
 from app.schema_observation.drift_detection import (
     detect_field_changes,
     ensure_pending_add_tracking,
@@ -37,7 +38,7 @@ def _paths_from_row(paths_json: dict[str, Any] | None) -> dict[str, dict[str, An
         return {}
     out: dict[str, dict[str, Any]] = {}
     for path, meta in paths.items():
-        if not isinstance(path, str) or not isinstance(meta, dict):
+        if not isinstance(path, str) or not isinstance(meta, dict) or is_runtime_metadata_path(path):
             continue
         typ = meta.get("type")
         if isinstance(typ, str):
@@ -150,7 +151,7 @@ def observe_extracted_events(
     max_depth = max(4, int(settings.GDC_SCHEMA_OBSERVATION_MAX_DEPTH))
 
     valid = [ev for ev in events if isinstance(ev, dict)]
-    sample = valid[:max_events]
+    sample = [without_runtime_metadata(event) for event in valid[:max_events]]
     if not sample:
         return
 

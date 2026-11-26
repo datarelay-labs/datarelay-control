@@ -1569,6 +1569,11 @@ async def post_stream_operational_replay(
         return stream_configuration_service.run_stream_operational_replay(db, stream_id, payload)
     except stream_configuration_service.StreamNotFoundError as exc:
         _raise_stream_configuration_not_found(exc)
+    except replay_service.ReplayAlreadyDeliveredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "message": exc.message},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -3284,19 +3289,28 @@ async def list_stream_replay_events(
 async def replay_stream_replay_event(
     event_id: int,
     request: Request,
+    allow_redelivery: bool = Query(
+        False,
+        description="Explicit override: replay even if the same events were already delivered.",
+    ),
     db: Session = Depends(get_db),
 ) -> ReplayEventActionResponse:
     from app.replay import service as replay_engine_service
 
     try:
-        result = replay_engine_service.execute_replay_event(db, event_id)
+        result = replay_engine_service.execute_replay_event(db, event_id, allow_redelivery=allow_redelivery)
     except replay_engine_service.ReplayEventNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail={"error_code": "REPLAY_EVENT_NOT_FOUND", "message": str(exc)},
         ) from exc
     except replay_engine_service.ReplayEventStateError as exc:
-        status_code = 409 if exc.error_code in {"REPLAY_DISCARDED", "REPLAY_ALREADY_REPLAYED"} else 422
+        status_code = (
+            409
+            if exc.error_code
+            in {"REPLAY_DISCARDED", "REPLAY_ALREADY_REPLAYED", "REPLAY_ALREADY_DELIVERED", "REPLAY_SUPERSEDED"}
+            else 422
+        )
         raise HTTPException(
             status_code=status_code,
             detail={"error_code": exc.error_code, "message": exc.message},
@@ -3539,12 +3553,25 @@ async def replay_failed_delivery_log(
     """Replay a failed route delivery from delivery_logs evidence; never updates checkpoints."""
 
     dry_run = bool(payload.dry_run) if payload is not None else False
+    allow_redelivery = bool(payload.allow_redelivery) if payload is not None else False
     try:
-        result = replay_service.replay_delivery_log(db, log_id, dry_run=dry_run)
+        result = replay_service.replay_delivery_log(
+            db,
+            log_id,
+            dry_run=dry_run,
+            allow_redelivery=allow_redelivery,
+        )
     except replay_service.DeliveryLogNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail={"error_code": "DELIVERY_LOG_NOT_FOUND", "message": f"log not found: {exc.log_id}"},
+        ) from exc
+    except replay_service.ReplayAlreadyDeliveredError as exc:
+        # 409: the request is well-formed but conflicts with delivery state; the client may
+        # retry with ``allow_redelivery`` after the operator explicitly confirms duplicates.
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "message": exc.message},
         ) from exc
     except replay_service.ReplayNotEligibleError as exc:
         raise HTTPException(

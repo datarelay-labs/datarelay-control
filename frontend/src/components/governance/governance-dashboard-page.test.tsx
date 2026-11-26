@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
 import * as operationalSnapshot from '../../api/operationalSnapshot'
+import { NAV_PATH } from '../../config/nav-paths'
 import { GovernanceDashboardPage } from './governance-dashboard-page'
 
 const sampleSummary: gdcGovernanceDashboard.GovernanceDashboardSummaryResponse = {
@@ -56,6 +57,44 @@ describe('GovernanceDashboardPage', () => {
       ],
     })
     vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
+  })
+
+  it('E-132 routes notification-only failures to notification history, not the violation center', async () => {
+    vi.spyOn(gdcGovernanceDashboard, 'fetchGovernanceDashboardSummary').mockResolvedValue({
+      ...sampleSummary, open_violations: 0, quarantined_events: 0,
+      failed_replays: 0, notification_failures: 20, pending_approvals: 0,
+      risk: { critical: 20, high: 0, medium: 0, low: 0 },
+      policy_health: { healthy: 0, warning: 0, critical: 0 },
+    })
+    vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolations').mockResolvedValue({
+      window: '24h', total: 0, violations: [],
+    })
+    render(<MemoryRouter><GovernanceDashboardPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByTestId('dashboard-kpi-overall-risk')).toHaveTextContent('Critical'))
+    expect(screen.getByTestId('governance-posture-summary')).not.toHaveTextContent(/critical violation/i)
+    expect(screen.getByTestId('governance-posture-summary')).toHaveTextContent('20 failed notification deliveries')
+    expect(screen.getByTestId('dashboard-kpi-critical-violations')).toHaveTextContent('0')
+    expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent('Review 0 high-severity violations')
+    expect(screen.getByTestId('gov-action-notification-failures')).toHaveTextContent('Review 20 failed notification deliveries')
+    expect(screen.getByTestId('gov-action-notification-failures')).toHaveAttribute('href', NAV_PATH.governanceNotifications)
+    expect(screen.getByTestId('governance-recommended-actions').querySelector('a')).toHaveAttribute('href', NAV_PATH.governanceNotifications)
+  })
+
+  it('E-132 separates failed replay jobs and high-severity violations in a mixed summary', async () => {
+    vi.spyOn(gdcGovernanceDashboard, 'fetchGovernanceDashboardSummary').mockResolvedValue({
+      ...sampleSummary, open_violations: 4, failed_replays: 1, notification_failures: 2,
+      risk: { critical: 3, high: 4, medium: 0, low: 0 },
+    })
+    render(<MemoryRouter><GovernanceDashboardPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByTestId('dashboard-kpi-overall-risk')).toHaveTextContent('Critical'))
+    const posture = screen.getByTestId('governance-posture-summary')
+    expect(posture).toHaveTextContent('1 failed replay job')
+    expect(posture).toHaveTextContent('2 failed notification deliveries')
+    expect(posture).toHaveTextContent('4 high-severity violations')
+    expect(screen.getByTestId('gov-action-failed-replays')).toHaveTextContent('Review 1 failed replay job')
+    expect(screen.getByTestId('gov-action-failed-replays')).toHaveAttribute('href', `${NAV_PATH.governanceReplay}?status=FAILED`)
+    expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent('Review 4 high-severity violations')
+    expect(screen.getByTestId('gov-action-critical-violations')).toHaveAttribute('href', NAV_PATH.governanceViolations)
   })
 
   it('renders governance overview layout sections', async () => {

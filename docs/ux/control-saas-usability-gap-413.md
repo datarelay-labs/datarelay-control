@@ -503,3 +503,15 @@ Five focused parent-page role/downgrade cases and one independent validation-ove
 **Bounded fix:** Use the existing reactive `useSessionCapabilities().workspace_mutations` gate on the two Streams creation links, consistent with the Route workspace, Destination actions and global New Data Flow CTA. Preserve all read-only Stream monitoring, search, filters, grouping and runtime links. Do not alter API/RBAC, persisted configuration, data-plane operations, Stream Wizard routing or backend auth.
 
 **Acceptance boundary:** New native role/downgrade tests and affected Streams console suites must PASS with scoped lint, TypeScript/Vite production build and exact-HEAD GitHub CI. Browser BFS 20/97 and two genuine-user FUE are deferred and NOT PASS; no merge, deployment or release authority.
+
+## 2026-11-26 — Contextual HTTP import preserves the owning Data Flow
+
+**Observed regression:** Approving a cURL or Postman request inside the contextual Add Connector dialog used the standalone navigation path. The parent Wizard could be unmounted or its exit guard triggered; saving a Connector passed only its ID and not the approved Stream request draft. The existing malformed-ID guard remains in effect.
+
+**Correction:** Hydrate the contextual Connector form in place using fresh defaults, avoiding carry-over of previously entered Connector credentials. Pass the approved HTTP Stream draft with the verified Connector ID, apply the existing import-to-Wizard mapping after the existing source-identity reset, preserve unrelated operator-authored mapping and checkpoint settings, and require fresh source/sample verification. Standalone import continues to use the existing navigation path. No new API, runtime or permission changes.
+
+**Evidence:** RED reproduced navigation out of the owning Data Flow; GREEN covers both import panels, Connector creation callback, credential non-carry-over, linked Source readback, imported request values and saved parent draft preservation. Eight affected suites passed 116/116. This is component evidence, not formal authenticated Browser BFS, Full User E2E or release acceptance.
+
+## 2026-11-26 — E-132 governance risk investigation semantics
+
+The dashboard summary API reports risk.critical as failed replay jobs plus failed notification deliveries; neither is a policy violation. The existing UI incorrectly called their sum critical violations and linked to the Violation Center. RED reproduced the original 20 failed notifications / zero violations case. The corrected dashboard keeps the existing aggregate posture and API contract, shows the high-severity violation count from risk.high, describes each failed category separately and links failed replays to the existing failed-status Replay Center and notification failures to Notifications. Missing summaries remain explicitly unverified. Mixed and notification-only regressions plus affected suites pass 66/66. Historical failure retention and actual policy-health aggregation semantics are unchanged; no new notification dismissal, retry, or deletion policy is introduced. Formal authenticated BFS/FUE remain separate.

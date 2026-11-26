@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, Link, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,8 @@ import { WIZARD_DRAFT_KEY_V2 } from './wizard/wizard-draft-migration'
 import { computeDeployReadiness } from './wizard/wizard-deploy-readiness'
 import * as gdcRuntimePreview from '../../api/gdcRuntimePreview'
 import { fetchCatalogSnapshot } from '../../api/gdcCatalog'
-import { createConnector } from '../../api/gdcConnectors'
+import { createConnector, fetchConnectorById } from '../../api/gdcConnectors'
+import { postCurlParse } from '../../api/gdcBackup'
 import { clearWizardCatalogSnapshot } from './wizard/wizard-catalog-cache'
 
 vi.mock('../../api/gdcStreams', () => ({
@@ -34,6 +35,11 @@ vi.mock('../../api/gdcRuntime', () => ({
 
 vi.mock('../../api/gdcCatalog', () => ({
   fetchCatalogSnapshot: vi.fn(async () => ({ connectors: [], sources: [], apiBacked: false })),
+}))
+
+vi.mock('../../api/gdcBackup', () => ({
+  postCurlParse: vi.fn(),
+  postPostmanParse: vi.fn(),
 }))
 
 vi.mock('../../api/gdcConnectors', () => ({
@@ -279,6 +285,72 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(await screen.findByRole('option', { name: /Connector #30.*verifying source link/i })).toHaveValue('30')
     expect(screen.queryByText('Draft restored from local storage.')).not.toBeInTheDocument()
+  })
+
+  it('keeps the owning Data Flow and applies the approved cURL request after Connector readback', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
+    vi.mocked(fetchConnectorById).mockResolvedValueOnce({
+      id: 30, name: 'Finance Connector', source_id: 31, source_type: 'HTTP_API_POLLING',
+      base_url: 'https://finance.example.net', auth_type: 'no_auth', verify_ssl: true,
+    } as Awaited<ReturnType<typeof fetchConnectorById>>)
+    vi.mocked(postCurlParse).mockResolvedValueOnce({
+      ok: true, warnings: [], parse_errors: [], draft: {
+        draft_kind: 'curl_http', connector: {
+          name: 'Finance Connector', source_type: 'HTTP_API_POLLING',
+          base_url: 'https://finance.example.net', auth_type: 'no_auth',
+        },
+        stream: {
+          name: 'Imported finance events', stream_type: 'HTTP_API_POLLING', enabled: false,
+          status: 'STOPPED', polling_interval: 90,
+          config_json: { method: 'POST', endpoint: '/v1/finance', params: { limit: '25' }, body: { filter: 'open' } },
+        },
+        source_config_json: {}, parsed: { method: 'POST', endpoint: '/v1/finance' },
+        warnings: [], parse_errors: [], secrets_included: false,
+      },
+    })
+    const initial = buildInitialState()
+    initial.stream.eventArrayPath = '$.existing'
+    initial.stream.checkpointSourcePath = '$.timestamp'
+    initial.mapping = [{ id: 'm1', outputField: 'existing', sourceJsonPath: '$.existing' }]
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'connect', state: initial }))
+    const user = userEvent.setup()
+    const router = createMemoryRouter([
+      { path: '/streams/new', element: <NewStreamWizardPage /> },
+      { path: '/connectors/new', element: <p>Unexpected navigation</p> },
+      { path: '/streams', element: <p>Saved draft exit</p> },
+    ], { initialEntries: ['/streams/new'] })
+    render(<RouterProvider router={router} />)
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Curl command' }), { target: { value: 'curl https://finance.example.net/v1/finance' } })
+    await user.click(screen.getByRole('button', { name: 'Parse cURL' }))
+    await user.click(await screen.findByRole('button', { name: 'Approve and open wizard' }))
+    expect(router.state.location.pathname).toBe('/streams/new')
+    expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Connector to Data Flow' })).not.toBeInTheDocument())
+    expect(router.state.location.pathname).toBe('/streams/new')
+    const requestTab = screen.getByTestId('wizard-connect-tab-request')
+    await waitFor(() => expect(requestTab).toBeEnabled())
+    await user.click(requestTab)
+    expect(screen.getByDisplayValue('Imported finance events')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('/v1/finance')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('POST')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('limit')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('25')).toBeInTheDocument()
+    expect(screen.getByDisplayValue(/"filter": "open"/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByTestId('wizard-exit-save'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams'))
+    const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2)!).state
+    expect(saved.stream).toMatchObject({
+      name: 'Imported finance events', pollingIntervalSec: 90,
+      eventArrayPath: '$.existing', checkpointSourcePath: '$.timestamp',
+      recordPathConfirmedForApiTestAt: null, checkpointConfirmedForApiTestAt: null,
+    })
+    expect(saved.mapping).toEqual(initial.mapping)
+    expect(saved.connector).toMatchObject({ connectorId: 30, sourceId: 31 })
+    expect(saved.apiTest.status).toBe('idle')
   })
 
   it('renders 5-step stepper labels with Route Processing', async () => {

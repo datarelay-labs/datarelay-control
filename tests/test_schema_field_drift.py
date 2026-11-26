@@ -157,3 +157,28 @@ def test_baseline_established_after_threshold(db_session: Session, drift_setting
     assert row.baseline_established_at is not None
     assert row.baseline_paths_json is not None
     assert "$.x" in row.baseline_paths_json.get("paths", {})
+
+
+def test_runtime_metadata_does_not_create_or_drive_drift(db_session: Session, drift_settings: None) -> None:
+    from app.schema_observation.drift_detection import list_open_field_drifts
+
+    stream_id = _seed_stream(db_session)
+    observe_extracted_events(db_session, stream_id, [{"stable": "a"}])
+    db_session.commit()
+    observe_extracted_events(db_session, stream_id, [
+        {"stable": "b", "new_field": "x", "__gdc_dedup_key": "b",
+         "__gdc_dedup_queue_id": 3, "gdc_db_watermark": 5, "gdc_db_order_value": 6}
+    ])
+    db_session.commit()
+    row = db_session.get(StreamObservedSchema, stream_id)
+    assert set(row.paths_json["paths"]) == {"$.stable", "$.new_field"}
+    assert {finding.field_path for finding in _open_findings(db_session, stream_id)} == {"$.new_field"}
+    # Older builds could already have recorded internal findings. Retain their
+    # historical rows, but never feed them back into runtime drift policy.
+    db_session.add(StreamSchemaFieldDrift(stream_id=stream_id,
+                   field_path="$.__gdc_dedup_key", category=DRIFT_CATEGORY_FIELD_ADDED))
+    db_session.commit()
+    assert {finding.field_path for finding in list_open_field_drifts(db_session, stream_id)} == {"$.new_field"}
+    assert {finding.field_path for finding in _open_findings(db_session, stream_id)} == {
+        "$.new_field", "$.__gdc_dedup_key"
+    }

@@ -23,30 +23,8 @@ import { WebhookReceiverFields } from './webhook-receiver-fields'
 import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 import { FormErrorBanner } from '../ui/form-error-banner'
 
-export function NewConnectorWizardPage({
-  onCreated,
-  onCancel,
-  onBusyChange,
-}: {
-  /** Contextual creation keeps the owning Wizard and all in-memory inputs mounted. */
-  onCreated?: (connectorId: number) => void
-  onCancel?: () => void
-  /** Lets a contextual parent guard navigation until the create request settles. */
-  onBusyChange?: (busy: boolean) => void
-} = {}) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const canMutateConnectors = useSessionCapabilities().workspace_mutations === true
-  const canTestConnectors = useSessionCapabilities().validation_mutations === true
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    onBusyChange?.(busy)
-  }, [busy, onBusyChange])
-  const [error, setError] = useState<string | null>(null)
-  // Bumped per failed submit so the banner re-takes focus even when the text repeats.
-  const [errorSeq, setErrorSeq] = useState(0)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [form, setForm] = useState<ConnectorWritePayload>({
+function initialConnectorForm(): ConnectorWritePayload {
+  return {
     name: '',
     description: '',
     source_type: 'HTTP_API_POLLING',
@@ -85,7 +63,33 @@ export function NewConnectorWizardPage({
     webhook_auth_header_name: 'X-GDC-Webhook-Secret',
     max_request_bytes: 1048576,
     payload_preview: '',
-  })
+  }
+}
+
+export function NewConnectorWizardPage({
+  onCreated,
+  onCancel,
+  onBusyChange,
+}: {
+  /** Contextual creation keeps the owning Wizard and all in-memory inputs mounted. */
+  onCreated?: (connectorId: number, streamDraft?: CurlImportDraft['stream']) => void
+  onCancel?: () => void
+  /** Lets a contextual parent guard navigation until the create request settles. */
+  onBusyChange?: (busy: boolean) => void
+} = {}) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const canMutateConnectors = useSessionCapabilities().workspace_mutations === true
+  const canTestConnectors = useSessionCapabilities().validation_mutations === true
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
+  const [error, setError] = useState<string | null>(null)
+  // Bumped per failed submit so the banner re-takes focus even when the text repeats.
+  const [errorSeq, setErrorSeq] = useState(0)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [form, setForm] = useState<ConnectorWritePayload>(initialConnectorForm)
   const isS3 = (form.source_type ?? 'HTTP_API_POLLING') === 'S3_OBJECT_POLLING'
   const isDb = (form.source_type ?? 'HTTP_API_POLLING') === 'DATABASE_QUERY'
   const isRemote = (form.source_type ?? 'HTTP_API_POLLING') === 'REMOTE_FILE_POLLING'
@@ -93,38 +97,47 @@ export function NewConnectorWizardPage({
   const isHttp = !isS3 && !isDb && !isRemote && !isWebhook
   const authType = (form.auth_type ?? 'no_auth') as AuthType
   const prevAuthRef = useRef<AuthType>('no_auth')
-  const curlHydratedRef = useRef(false)
+  const curlHydratedRef = useRef<unknown>(null)
   const pendingStreamDraftRef = useRef<CurlImportDraft['stream'] | null>(null)
 
-  useEffect(() => {
-    if (curlHydratedRef.current) return
-    const state = (location.state ?? {}) as HttpImportWizardLocationState
-    const draft = state.curlDraft
-    if (!draft || typeof draft !== 'object') return
-    curlHydratedRef.current = true
-    setForm((prev) => ({
-      ...prev,
+  const hydrateImport = useCallback((draft: Record<string, unknown>, streamDraft?: CurlImportDraft['stream']) => {
+    setForm({
+      ...initialConnectorForm(),
       ...(draft as ConnectorWritePayload),
       status: 'STOPPED',
       common_headers: {
         ...DEFAULT_GENERIC_HTTP_COMMON_HEADERS,
         ...((draft.common_headers as Record<string, string> | undefined) ?? {}),
       },
-    }))
-    pendingStreamDraftRef.current = state.streamDraft ?? null
-    if (state.streamDraft?.name) {
-      setSuccess(`Stream draft "${state.streamDraft.name}" ready — save the connector, then continue to the stream wizard.`)
+    })
+    pendingStreamDraftRef.current = streamDraft ?? null
+    setError(null)
+    if (streamDraft?.name) {
+      setSuccess(`Stream draft "${streamDraft.name}" ready — save the connector, then continue to the stream wizard.`)
     } else {
       setSuccess('Connector fields loaded from import draft. Enter any secrets before saving.')
     }
-  }, [location.state])
+  }, [])
+
+  useEffect(() => {
+    if (onCreated || curlHydratedRef.current === location.state) return
+    const state = (location.state ?? {}) as HttpImportWizardLocationState
+    const draft = state.curlDraft
+    if (!draft || typeof draft !== 'object') return
+    curlHydratedRef.current = location.state
+    hydrateImport(draft, state.streamDraft)
+  }, [location.state, hydrateImport, onCreated])
 
   const onApproveImport = useCallback(
     (draft: CurlImportDraft) => {
-      if (getSessionCapabilities().workspace_mutations !== true) return
-      navigateToConnectorWizardWithDraft(navigate, draft)
+      if (getSessionCapabilities().workspace_mutations !== true || busy) return
+      if (onCreated) {
+        hydrateImport(draft.connector, draft.stream)
+      } else {
+        navigateToConnectorWizardWithDraft(navigate, draft)
+      }
     },
-    [navigate],
+    [busy, hydrateImport, navigate, onCreated],
   )
 
   // The "API Key Location" select shows `headers` when unset. Commit that default to the form state as
@@ -345,11 +358,12 @@ export function NewConnectorWizardPage({
           'Connector creation response could not be verified. Check the Connector catalog before attempting another save.',
         )
       }
+      const streamDraft = pendingStreamDraftRef.current
       if (onCreated) {
-        onCreated(created.id)
+        if (streamDraft && isHttp) onCreated(created.id, streamDraft)
+        else onCreated(created.id)
         return
       }
-      const streamDraft = pendingStreamDraftRef.current
       if (streamDraft && isHttp) {
         navigateToStreamWizardWithDraft(navigate, created.id, streamDraft)
         return

@@ -1,0 +1,128 @@
+{
+  "template_id": "stellar_cyber_scoped_cases_api",
+  "name": "Stellar Cyber Cases (Scoped API Key)",
+  "category": "XDR",
+  "description": "Read-only Case polling with scoped API key to short-lived JWT exchange. Limited by the service user's RBAC and tenancy.",
+  "source_type": "HTTP_API_POLLING",
+  "auth_type": "jwt_refresh_token",
+  "tags": [
+    "stellar",
+    "stellar-cyber",
+    "scoped-api-key",
+    "jwt",
+    "cases"
+  ],
+  "included_components": [
+    "connector",
+    "source",
+    "stream",
+    "mapping",
+    "enrichment",
+    "checkpoint",
+    "route_suggestion"
+  ],
+  "recommended_destinations": [
+    "WEBHOOK_POST",
+    "SYSLOG_TCP"
+  ],
+  "connector_defaults": {
+    "description": "Stellar Cyber scoped Cases API (read-only)",
+    "auth_type": "jwt_refresh_token",
+    "verify_ssl": true,
+    "token_path": "/connect/api/v1/access_token",
+    "token_http_method": "POST",
+    "refresh_token_header_name": "Authorization",
+    "refresh_token_header_prefix": "Bearer",
+    "access_token_json_path": "$.access_token",
+    "access_token_header_name": "Authorization",
+    "access_token_header_prefix": "Bearer",
+    "token_ttl_seconds": 600
+  },
+  "source_config_overlay": {},
+  "stream_defaults": {
+    "name": "Stellar Cyber Cases poll",
+    "polling_interval": 120,
+    "config_json": {
+      "endpoint": "/connect/api/v1/cases?limit=100&sort=score&order=desc",
+      "method": "GET",
+      "timeout_seconds": 45,
+      "retry_count": 2,
+      "retry_backoff_seconds": 2.0
+    },
+    "rate_limit_json": {
+      "max_requests": 20,
+      "per_seconds": 60
+    }
+  },
+  "mapping_defaults": {
+    "event_array_path": "$.data.cases",
+    "event_root_path": null,
+    "field_mappings_json": {
+      "case_id": "$._id",
+      "title": "$.name",
+      "severity": "$.severity",
+      "score": "$.score",
+      "status": "$.status",
+      "created_at": "$.created_at",
+      "modified_at": "$.modified_at",
+      "tenant_id": "$.cust_id"
+    },
+    "raw_payload_mode": "JSON"
+  },
+  "enrichment_defaults": {
+    "enrichment_json": {
+      "vendor": "StellarCyber",
+      "product": "OpenXDR",
+      "log_type": "case",
+      "event_source": "stellar_cyber_cases"
+    },
+    "override_policy": "KEEP_EXISTING",
+    "enabled": true
+  },
+  "checkpoint_defaults": {
+    "checkpoint_type": "CUSTOM_FIELD",
+    "checkpoint_value_json": {}
+  },
+  "route_suggestions": [
+    {
+      "failure_policy": "LOG_AND_CONTINUE",
+      "formatter_config_json": {
+        "message_format": "json"
+      },
+      "rate_limit_json": {
+        "max_events": 100,
+        "per_seconds": 1
+      },
+      "enabled": false
+    }
+  ],
+  "setup_instructions": [
+    "Use a dedicated local Stellar Cyber service user with the least RBAC and tenant scope required; SSO user credentials are not used for the API.",
+    "Provide the DP HTTPS origin as Host and paste the User Profile > API Keys scoped key into Refresh token. A username is not required for scoped key authentication.",
+    "The connector obtains a short-lived access_token with POST /connect/api/v1/access_token (Bearer scoped key), then uses Bearer access_token for GET /connect/api/v1/cases.",
+    "Confirm SSL trust, authenticate against a real read-only API path and inspect a sample response before starting the Stream or Route.",
+    "The default Case endpoint retrieves a bounded, score-sorted page. It is NOT exhaustive historical synchronization: configure and verify incremental pagination, deduplication and checkpoint behavior for your DP version before enabling continuous delivery.",
+    "The endpoint must be permitted by the scoped user's RBAC and tenancy; some administrative and data APIs require an all-access token and are not supported by this template."
+  ],
+  "preview": {
+    "sample_api_structure": {
+      "data": {
+        "total": 1,
+        "cases": [
+          {
+            "_id": "example-case-1",
+            "name": "Example Case",
+            "severity": "Critical",
+            "score": 90,
+            "status": "In Progress",
+            "created_at": 1700000000000,
+            "modified_at": 1700000000000,
+            "cust_id": "example-tenant"
+          }
+        ]
+      }
+    },
+    "checkpoint_strategy": "No automatic historical page/cursor is implied by this starter preset; validate an incremental strategy before activation.",
+    "route_recommendations": "Routes are created disabled; review tenant scope, mapping and delivery target first."
+  }
+}

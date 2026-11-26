@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -459,5 +459,47 @@ describe('ConnectorDetailPage connectivity test reflects the visible draft for n
 
     expect(await screen.findByText(/Database host and database name are required/)).toBeInTheDocument()
     expect(runConnectorAuthTestMock).not.toHaveBeenCalled()
+  })
+
+  it('never receives the saved vendor token body and keeps it unless a new body is typed (E-098)', async () => {
+    renderDetail({
+      name: 'vendor-exchange',
+      connector_type: 'generic_http',
+      source_type: 'HTTP_API_POLLING',
+      host: 'https://api.vendor.example',
+      base_url: 'https://api.vendor.example',
+      auth_type: 'vendor_jwt_exchange',
+      auth: {
+        auth_type: 'vendor_jwt_exchange',
+        user_id: 'vendor-user',
+        api_key: '********',
+        api_key_configured: true,
+        token_url: 'https://auth.vendor.example/token',
+        token_method: 'POST',
+        token_auth_mode: 'none',
+        token_body_mode: 'json',
+        token_body: '********',
+        token_body_configured: true,
+      },
+    })
+    updateConnectorMock.mockResolvedValue({ id: 10 })
+    const user = userEvent.setup()
+
+    const body = await screen.findByLabelText('Token body')
+    expect(body).toHaveValue('')
+    expect(body).toHaveAttribute('placeholder', expect.stringContaining('********'))
+    expect(screen.getByTestId('token-body-saved-hint')).toHaveTextContent(/hidden/i)
+
+    // Untouched: blank is sent, which the server reads as "keep the stored body".
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    await waitFor(() => expect(updateConnectorMock).toHaveBeenCalledTimes(1))
+    expect(updateConnectorMock.mock.calls[0][1].token_body).toBe('')
+
+    // A newly typed body replaces it.
+    updateConnectorMock.mockClear()
+    fireEvent.change(body, { target: { value: '{"vendor_key": "typed-new"}' } })
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    await waitFor(() => expect(updateConnectorMock).toHaveBeenCalledTimes(1))
+    expect(updateConnectorMock.mock.calls[0][1].token_body).toBe('{"vendor_key": "typed-new"}')
   })
 })

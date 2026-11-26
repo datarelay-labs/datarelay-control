@@ -76,6 +76,11 @@ export function TemplateUseModal({
           { key: 'oauth2_token_url', label: 'Token URL', type: 'text' as const, optional: false as const },
           { key: 'oauth2_scope', label: 'Scope (optional)', type: 'text' as const, optional: true as const },
         ]
+      case 'jwt_refresh_token':
+        return [
+          { key: 'refresh_token', label: 'Scoped API key / Refresh token', type: 'password' as const, optional: false as const },
+          { key: 'token_url', label: 'Token URL (optional; template default used when blank)', type: 'text' as const, optional: true as const },
+        ]
       case 'vendor_jwt_exchange':
         return [
           { key: 'user_id', label: 'User ID', type: 'text' as const, optional: false as const },

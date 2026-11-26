@@ -3,6 +3,7 @@ import { Children, cloneElement, isValidElement, useId, useMemo, useState, type 
 import { IncrementalFetchCompatibilityHints } from '../incremental-fetch-compatibility-hints'
 import {
   applyIncrementalRequestTemplate,
+  reconcileIncrementalQueryParamDraft,
   incrementalPatternDisplayLabel,
   incrementalTemplateDefaults,
   incrementalCursorKindFromFieldType,
@@ -71,6 +72,13 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
     [c.httpMethod, c.params, c.requestBody, c.checkpointFieldType, c.incrementalRequestPattern, c.incrementalRequestDraft, c.checkpointSourcePath],
   )
 
+  const overriddenQueryParamKeys = useMemo(() => {
+    if (!incrementalApplied) return []
+    return c.params
+      .filter((row) => row.key.trim() && effectiveRequest.params[row.key.trim()] !== row.value)
+      .map((row) => row.key.trim())
+  }, [c.params, effectiveRequest.params, incrementalApplied])
+
   const [selectedBodyTemplate, setSelectedBodyTemplate] = useState<BodyTemplateId>(DEFAULT_BODY_TEMPLATE_ID)
 
   function patchHeaders(rows: StreamConfigHeaderRow[]) {
@@ -78,7 +86,14 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
   }
 
   function patchParams(rows: StreamConfigParamRow[]) {
-    onChange({ params: rows })
+    const before = Object.fromEntries(c.params.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]))
+    const after = Object.fromEntries(rows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]))
+    const nextDraft = reconcileIncrementalQueryParamDraft(
+      before, after, c.incrementalRequestPattern, c.incrementalRequestDraft,
+    )
+    onChange(nextDraft === c.incrementalRequestDraft
+      ? { params: rows }
+      : { params: rows, incrementalRequestDraft: nextDraft })
   }
 
   function applyBodyTemplate(nextId: BodyTemplateId) {
@@ -366,6 +381,13 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
             <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950 p-2 font-mono text-[11px] text-emerald-200">
               {c.incrementalRequestDraft.trim()}
             </pre>
+            {overriddenQueryParamKeys.length > 0 ? (
+              <p role="alert" className="mt-1.5 text-amber-800 dark:text-amber-300">
+                Incremental request overrides Request Configuration for {overriddenQueryParamKeys.join(', ')}.
+                The saved Stream and scheduled polling will use the template values, not the values above.
+                Edit the override in Record Selection.
+              </p>
+            ) : null}
           </div>
         ) : null}
         <IncrementalFetchCompatibilityHints

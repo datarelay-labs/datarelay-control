@@ -159,7 +159,13 @@ def test_import_preview_and_additive_apply(client: TestClient, db_session: Sessi
 
     apply_res = client.post(
         "/api/v1/backup/import/apply",
-        json={"bundle": bundle, "mode": "additive", "confirm": True, "preview_token": token},
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "on_name_conflict": "rename",  # E-124: the name already exists in this database
+        },
     )
     assert apply_res.status_code == 200
     created = apply_res.json().get("created") or {}
@@ -167,7 +173,7 @@ def test_import_preview_and_additive_apply(client: TestClient, db_session: Sessi
     assert len(new_cids) == 1
     new_connector = db_session.get(Connector, new_cids[0])
     assert new_connector is not None
-    assert new_connector.name == "backup-seed-connector"
+    assert new_connector.name == "backup-seed-connector (2)"
     assert new_connector.status == "STOPPED"
     new_sids = created.get("stream_ids") or []
     assert new_sids
@@ -383,7 +389,11 @@ def test_unsupported_import_mode_rejected(client: TestClient, db_session: Sessio
     assert prev.json()["detail"]["error_code"] == "IMPORT_MODE_UNSUPPORTED"
 
 
-def test_additive_import_still_duplicates_when_entities_exist(client: TestClient, db_session: Session) -> None:
+def test_additive_import_never_duplicates_silently_when_entities_exist(
+    client: TestClient, db_session: Session
+) -> None:
+    """E-124: the former behaviour (a silent same-name duplicate) is retired."""
+
     ids = _seed_connector_graph(db_session)
     bundle = client.get(
         f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
@@ -391,12 +401,16 @@ def test_additive_import_still_duplicates_when_entities_exist(client: TestClient
     token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
         "preview_token"
     ]
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={"bundle": bundle, "mode": "additive", "confirm": True, "preview_token": token},
-    )
-    assert apply_res.status_code == 200
+    payload = {"bundle": bundle, "mode": "additive", "confirm": True, "preview_token": token}
+    refused = client.post("/api/v1/backup/import/apply", json=payload)
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["error_code"] == "IMPORT_NAME_CONFLICT_UNRESOLVED"
+    assert db_session.query(Connector).count() == 1
+    renamed = client.post("/api/v1/backup/import/apply", json={**payload, "on_name_conflict": "rename"})
+    assert renamed.status_code == 200
     assert db_session.query(Connector).count() == 2
+    names = sorted(str(c.name) for c in db_session.query(Connector).all())
+    assert names == ["backup-seed-connector", "backup-seed-connector (2)"]
 
 
 def test_import_apply_idempotency_same_key_replays_without_recreate(
@@ -418,6 +432,7 @@ def test_import_apply_idempotency_same_key_replays_without_recreate(
             "confirm": True,
             "preview_token": token,
             "idempotency_key": op_key,
+            "on_name_conflict": "rename",
         },
     )
     assert first.status_code == 200, first.text
@@ -436,6 +451,7 @@ def test_import_apply_idempotency_same_key_replays_without_recreate(
             "confirm": True,
             "preview_token": token,
             "idempotency_key": op_key,
+            "on_name_conflict": "rename",
         },
     )
     assert second.status_code == 200, second.text
@@ -446,7 +462,7 @@ def test_import_apply_idempotency_same_key_replays_without_recreate(
     assert db_session.query(Connector).count() == connectors_after_first
 
 
-def test_import_apply_new_operation_same_bundle_creates_again(
+def test_import_apply_new_operation_same_bundle_creates_again_under_a_new_unique_name(
     client: TestClient, db_session: Session
 ) -> None:
     ids = _seed_connector_graph(db_session)
@@ -464,6 +480,7 @@ def test_import_apply_new_operation_same_bundle_creates_again(
             "confirm": True,
             "preview_token": token,
             "idempotency_key": "op-import-apply-A",
+            "on_name_conflict": "rename",
         },
     )
     assert first.status_code == 200, first.text
@@ -477,6 +494,7 @@ def test_import_apply_new_operation_same_bundle_creates_again(
             "confirm": True,
             "preview_token": token,
             "idempotency_key": "op-import-apply-B",
+            "on_name_conflict": "rename",
         },
     )
     assert second.status_code == 200, second.text
@@ -838,7 +856,13 @@ def test_stream_export_import_round_trip_carries_route_children(client: TestClie
     assert prev["ok"] is True, prev
     applied = client.post(
         "/api/v1/backup/import/apply",
-        json={"bundle": bundle, "mode": "additive", "confirm": True, "preview_token": prev["preview_token"]},
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": prev["preview_token"],
+            "on_name_conflict": "rename",
+        },
     )
     assert applied.status_code == 200, applied.text
     new_sid = applied.json()["created"]["stream_ids"][0]
@@ -900,7 +924,13 @@ def test_legacy_bundle_without_route_children_still_imports(client: TestClient, 
     assert prev["ok"] is True, prev
     applied = client.post(
         "/api/v1/backup/import/apply",
-        json={"bundle": bundle, "mode": "additive", "confirm": True, "preview_token": prev["preview_token"]},
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": prev["preview_token"],
+            "on_name_conflict": "rename",
+        },
     )
     assert applied.status_code == 200, applied.text
     new_sid = applied.json()["created"]["stream_ids"][0]

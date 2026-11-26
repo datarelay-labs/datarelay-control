@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.event_metadata import is_runtime_metadata_path
 from app.schema_observation.models import (
     DRIFT_CATEGORY_FIELD_ADDED,
     DRIFT_CATEGORY_FIELD_REMOVED,
@@ -34,7 +35,7 @@ def _baseline_paths_from_row(baseline_json: dict[str, Any] | None) -> dict[str, 
         return {}
     out: dict[str, dict[str, Any]] = {}
     for path, meta in paths.items():
-        if not isinstance(path, str):
+        if not isinstance(path, str) or is_runtime_metadata_path(path):
             continue
         if isinstance(meta, dict):
             typ = meta.get("type")
@@ -306,8 +307,8 @@ def _upsert_open_drift(
 
 
 def list_open_field_drifts(db: Session, stream_id: int) -> list[StreamSchemaFieldDrift]:
-    return list(
-        db.execute(
+    return [
+        row for row in db.execute(
             select(StreamSchemaFieldDrift)
             .where(
                 StreamSchemaFieldDrift.stream_id == stream_id,
@@ -315,7 +316,8 @@ def list_open_field_drifts(db: Session, stream_id: int) -> list[StreamSchemaFiel
             )
             .order_by(StreamSchemaFieldDrift.category, StreamSchemaFieldDrift.field_path)
         ).scalars()
-    )
+        if not is_runtime_metadata_path(row.field_path)
+    ]
 
 
 def _observed_paths_from_row(row: StreamObservedSchema | None) -> dict[str, dict[str, Any]]:

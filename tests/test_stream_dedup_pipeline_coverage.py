@@ -56,7 +56,7 @@ def test_dedup_metadata_survives_mapping_reconstruction(
 ) -> None:
     fixture = _seed_stream_runtime(db_session)
     stream_id = int(fixture["stream_id"])
-    _enable_dedup(db_session, stream_id, key_field="id")
+    _enable_dedup(db_session, stream_id, key_field="id", scope="last_n_hours", window_hours=24)
 
     mapping = db_session.query(Mapping).filter(Mapping.stream_id == stream_id).one()
     mapping.field_mappings_json = {
@@ -76,8 +76,13 @@ def test_dedup_metadata_survives_mapping_reconstruction(
 
     assert captured
     sent = captured[0][0]
-    assert sent.get(GDC_DEDUP_KEY_META) == "evt-map"
-    assert isinstance(sent.get(GDC_DEDUP_QUEUE_ID_META), int)
+    assert sent["mapped_id"] == "evt-map"
+    assert GDC_DEDUP_KEY_META not in sent
+    assert GDC_DEDUP_QUEUE_ID_META not in sent
+    assert any(
+        "evt-map" in (row.payload_sample or {}).get("dedup_keys", [])
+        for row in _registry_logs(db_session, stream_id)
+    )
 
 def test_dedup_metadata_survives_per_route_protection_payloads(
     db_session: Session,
@@ -88,7 +93,7 @@ def test_dedup_metadata_survives_per_route_protection_payloads(
     fixture = _seed_stream_runtime(db_session, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
     stream_id = int(fixture["stream_id"])
     route_a, route_b = fixture["route_ids"]
-    _enable_dedup(db_session, stream_id, key_field="id")
+    _enable_dedup(db_session, stream_id, key_field="id", scope="last_n_hours", window_hours=24)
     _add_email_mapping(db_session, stream_id)
 
     stream = db_session.query(Stream).filter(Stream.id == stream_id).one()
@@ -115,7 +120,10 @@ def test_dedup_metadata_survives_per_route_protection_payloads(
 
     assert len(captured) == 2
     for batch in captured:
-        assert batch[0].get(GDC_DEDUP_KEY_META) == "evt-route"
+        assert GDC_DEDUP_KEY_META not in batch[0]
+        assert GDC_DEDUP_QUEUE_ID_META not in batch[0]
+    assert _registry_logs_for_route(db_session, stream_id, route_a)
+    assert _registry_logs_for_route(db_session, stream_id, route_b)
     assert captured[0][0].get("email") != captured[1][0].get("email")
 
 

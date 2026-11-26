@@ -153,7 +153,7 @@ describe('Governance Dashboard modernization', () => {
     expect(screen.getByText(/Is governance healthy, and what needs attention now/i)).toBeInTheDocument()
     expect(screen.getByTestId('governance-posture-overview')).toBeInTheDocument()
     expect(screen.getByTestId('governance-recommended-actions')).toBeInTheDocument()
-    expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent(/Review 3 critical violations/i)
+    expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent(/Review 4 high-severity violations/i)
     expect(screen.queryByText(/위반을 검토하세요/)).not.toBeInTheDocument()
     expect(screen.queryByText(/\(요약\)/)).not.toBeInTheDocument()
     expect(screen.queryByText('Policy Builder')).not.toBeInTheDocument()

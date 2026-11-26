@@ -23,7 +23,9 @@ describe('DangerousActionDialog', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Delete connector?')).toBeInTheDocument()
     expect(screen.getByTestId('dangerous-action-dialog-impact')).toHaveTextContent('Removes connector configuration permanently.')
-    expect(screen.getByTestId('dangerous-action-dialog-dependencies')).toHaveTextContent('Connected streams: 3')
+    // The count is shown as-is: no pluralisation suffix glued to the number ("3s").
+    expect(screen.getByTestId('dangerous-action-dialog-dependencies').textContent).toContain('Connected streams: 3')
+    expect(screen.getByTestId('dangerous-action-dialog-dependencies').textContent).not.toContain('3s')
     expect(screen.getByTestId('dangerous-action-dialog-reversibility')).toHaveTextContent('This cannot be undone.')
   })
 
