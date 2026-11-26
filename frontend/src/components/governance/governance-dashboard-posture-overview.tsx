@@ -39,8 +39,12 @@ function postureDescription(summary: GovernanceDashboardSummaryResponse | null, 
     return 'Policy posture summary is still loading or unavailable'
   }
   if (posture === 'critical') {
-    const critical = summary.risk.critical
-    return `${critical} critical violation${critical === 1 ? '' : 's'} need investigation`
+    const issues = [
+      summary.failed_replays > 0 ? `${formatCount(summary.failed_replays)} failed replay job${summary.failed_replays === 1 ? '' : 's'}` : null,
+      summary.notification_failures > 0 ? `${formatCount(summary.notification_failures)} failed notification deliver${summary.notification_failures === 1 ? 'y' : 'ies'}` : null,
+      summary.risk.high > 0 ? `${formatCount(summary.risk.high)} high-severity violation${summary.risk.high === 1 ? '' : 's'}` : null,
+    ].filter(Boolean)
+    return issues.length > 0 ? issues.join(' · ') : 'Critical governance health signals detected — review the available evidence'
   }
   if (posture === 'warning') {
     const open = summary.open_violations
@@ -131,8 +135,8 @@ export function GovernanceDashboardPostureOverview({
             to={NAV_PATH.governanceViolations}
           />
           <CompactCount
-            label="Critical"
-            value={countOf((s) => s.risk.critical)}
+            label="High-severity violations"
+            value={countOf((s) => s.risk.high)}
             testId="dashboard-kpi-critical-violations"
             to={NAV_PATH.governanceViolations}
           />

@@ -205,7 +205,9 @@ export function GovernanceDashboardPage() {
   }, [loadSummary, loadOperationalIssues])
 
   const recommendedActions = useMemo(() => {
-    const critical = summary?.risk.critical ?? 0
+    const high = summary?.risk.high ?? 0
+    const failedReplays = summary?.failed_replays ?? 0
+    const failedNotifications = summary?.notification_failures ?? 0
     const pending = summary?.pending_approvals ?? 0
     const quarantined = summary?.quarantined_events ?? 0
     const schemaChanges = operationalIssues.schemaDriftCount
@@ -213,13 +215,33 @@ export function GovernanceDashboardPage() {
     const actions = [
       {
         label: summaryUnverified
-          ? 'Critical violations: governance summary unavailable - counts not verified'
-          : `Review ${formatCount(critical)} critical violation${critical === 1 ? '' : 's'}`,
+          ? 'High-severity violations: governance summary unavailable - counts not verified'
+          : `Review ${formatCount(high)} high-severity violation${high === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceViolations,
         tone: 'red' as const,
         testId: 'gov-action-critical-violations',
-        priority: critical > 0 ? 0 : 40,
-        count: critical,
+        priority: high > 0 ? 0 : 40,
+        count: high,
+      },
+      {
+        label: summaryUnverified
+          ? 'Failed replays: governance summary unavailable - counts not verified'
+          : `Review ${formatCount(failedReplays)} failed replay job${failedReplays === 1 ? '' : 's'}`,
+        to: `${NAV_PATH.governanceReplay}?status=FAILED`,
+        tone: 'red' as const,
+        testId: 'gov-action-failed-replays',
+        priority: failedReplays > 0 ? 0 : 44,
+        count: failedReplays,
+      },
+      {
+        label: summaryUnverified
+          ? 'Failed notifications: governance summary unavailable - counts not verified'
+          : `Review ${formatCount(failedNotifications)} failed notification deliver${failedNotifications === 1 ? 'y' : 'ies'}`,
+        to: NAV_PATH.governanceNotifications,
+        tone: 'red' as const,
+        testId: 'gov-action-notification-failures',
+        priority: failedNotifications > 0 ? 0 : 45,
+        count: failedNotifications,
       },
       {
         label: summaryUnverified

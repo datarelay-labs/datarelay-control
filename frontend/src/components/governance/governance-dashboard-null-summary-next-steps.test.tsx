@@ -45,7 +45,8 @@ describe('GovernanceDashboardPage next steps when the summary is unavailable', (
     const pending = screen.getByTestId('gov-action-pending-approvals')
     const quarantine = screen.getByTestId('gov-action-quarantine')
     await waitFor(() => expect(critical).toHaveTextContent(/counts not verified/i))
-    for (const row of [critical, pending, quarantine]) {
+    for (const row of [critical, pending, quarantine,
+      screen.getByTestId('gov-action-failed-replays'), screen.getByTestId('gov-action-notification-failures')]) {
       expect(row).toHaveTextContent(/governance summary unavailable - counts not verified/i)
       expect(row.textContent ?? '').not.toMatch(/\b0\b/)
     }
@@ -59,7 +60,7 @@ describe('GovernanceDashboardPage next steps when the summary is unavailable', (
     expect(screen.getByTestId('gov-action-schema-drift')).toBeInTheDocument()
   })
 
-  it('keeps count wording unchanged when the summary exists', async () => {
+  it('keeps category-specific counts when the summary exists', async () => {
     vi.spyOn(gdcGovernanceDashboard, 'fetchGovernanceDashboardSummary').mockResolvedValue(sampleSummary)
     render(
       <MemoryRouter>
@@ -68,7 +69,7 @@ describe('GovernanceDashboardPage next steps when the summary is unavailable', (
     )
 
     await waitFor(() =>
-      expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent('Review 3 critical violations'),
+      expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent('Review 4 high-severity violations'),
     )
     expect(screen.getByTestId('gov-action-pending-approvals')).toHaveTextContent('Process 2 pending approvals')
     expect(screen.getByTestId('gov-action-quarantine')).toHaveTextContent('Review 5 quarantined events')
